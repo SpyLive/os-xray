@@ -1,4 +1,10 @@
-# os-xray v1.3.0
+# os-xray
+
+[![Release](https://img.shields.io/github/v/release/MrTheory/os-xray)](https://github.com/MrTheory/os-xray/releases)
+[![License](https://img.shields.io/github/license/MrTheory/os-xray)](https://github.com/MrTheory/os-xray/blob/main/LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/MrTheory/os-xray/total)](https://github.com/MrTheory/os-xray/releases)
+[![OPNsense](https://img.shields.io/badge/OPNsense-25.x%20%2F%2026.x-blue)](https://opnsense.org)
+[![FreeBSD](https://img.shields.io/badge/FreeBSD-14.x%20amd64-red)](https://freebsd.org)
 
 **Xray-core (VLESS+Reality) VPN plugin for OPNsense**
 
@@ -14,8 +20,12 @@ Xray-core с протоколом VLESS+Reality + tun2socks — нативный
 - При установке автоматически определяет и импортирует существующий конфиг xray-core и tun2socks
 - Совместимость с селективной маршрутизацией OPNsense (Firewall Aliases + Rules + Gateway)
 - Статус сервисов xray-core и tun2socks обновляется в GUI каждые 5 секунд
+- **Кнопки Start / Stop / Restart** — управление сервисом прямо из GUI без перезагрузки страницы
+- **Кнопка Validate Config** — сухой прогон конфига через `xray -test` без остановки сервиса
 - **Кнопка Test Connection** — проверяет, что xray-core реально проксирует трафик
-- **Вкладка Log** — просмотр последних 150 строк boot-лога прямо в GUI
+- **Вкладка Log** — Boot Log и Xray Core Log прямо в GUI
+- **Вкладка Diagnostics** — статистика TUN-интерфейса: IP, MTU, байты, пакеты, uptime процессов
+- **Watchdog** — автоматический перезапуск при падении xray-core или tun2socks (настраивается)
 - **Автозапуск после ребута** — интерфейс поднимается автоматически, нажимать Apply вручную не нужно
 - ACL-права — доступ к GUI и API только для авторизованных пользователей с ролью `page-vpn-xray`
 
@@ -49,8 +59,8 @@ Firewall Rules (селективная маршрутизация)
 ## Установка
 
 ```sh
-fetch -o /tmp/os-xray-v3.tar https://raw.githubusercontent.com/MrTheory/os-xray/refs/heads/main/os-xray-v4.tar
-cd /tmp && tar xf os-xray-v4.tar
+fetch -o /tmp/os-xray-v5.tar https://raw.githubusercontent.com/MrTheory/os-xray/refs/heads/main/os-xray-v5.tar
+cd /tmp && tar xf os-xray-v5.tar && cd os-xray-v5
 sh install.sh
 ```
 
@@ -69,9 +79,10 @@ sh install.sh
 Обнови браузер (`Ctrl+F5`) → **VPN → Xray**
 
 1. Вкладка **Instance** → кнопка **Import VLESS link** → вставь ссылку → **Parse & Fill**
-2. Вкладка **General** → установи галку **Enable Xray**
+2. Вкладка **General** → установи галку **Enable Xray** (и **Enable Watchdog** по желанию)
 3. Нажми **Apply**
 4. Кнопка **Test Connection** — убедись, что туннель работает (показывает HTTP 200)
+5. Кнопка **Validate Config** — проверить конфиг без перезапуска сервиса
 
 ---
 
@@ -105,25 +116,31 @@ MSS Clamping для Xray не требуется (в отличие от WireGua
 - **`xray_configure_do()`** — boot hook (приоритет 10), запускает процессы на раннем этапе загрузки
 - **`/usr/local/etc/rc.syshook.d/start/50-xray`** — финальный скрипт, поднимает интерфейс и применяет routing/firewall когда OPNsense полностью загружен
 
-Лог сохраняется в `/tmp/xray_syshook.log` (дозапись, ротация при превышении 50 KB). Просмотреть прямо в GUI: вкладка **Log** → кнопка **Refresh**.
+Лог сохраняется в `/tmp/xray_syshook.log` (дозапись, ротация при превышении 50 KB).
+
+---
+
+## Watchdog
+
+При включённом **Enable Watchdog** cron каждую минуту проверяет живость xray-core и tun2socks. При падении любого из процессов — оба перезапускаются автоматически. События пишутся в `/var/log/xray-watchdog.log` (ротация: 3 файла по 100 KB).
+
+Watchdog не перезапускает сервис если он был остановлен вручную через кнопку **Stop** или **Apply** с отключённым Enable.
 
 ---
 
 ## Остановка сервиса
 
 При остановке (`Stop` в GUI или `Apply` с отключённым Enable) плагин:
-1. Останавливает tun2socks
-2. **Удаляет TUN-интерфейс** (`ifconfig proxytun2socks0 destroy`) — OPNsense перестаёт считать шлюз живым
-3. Останавливает xray-core
-
-Это предотвращает ситуацию, когда трафик уходит в никуда после остановки VPN.
+1. Останавливает tun2socks — он сам уничтожает TUN-интерфейс при завершении
+2. Останавливает xray-core
+3. Выставляет флаг намеренной остановки — watchdog не будет перезапускать сервис
 
 ---
 
 ## Удаление
 
 ```sh
-cd /tmp/os-xray-v3
+cd /tmp/os-xray-v5
 sh install.sh uninstall
 ```
 
@@ -131,38 +148,125 @@ sh install.sh uninstall
 
 ## Устранение неполадок
 
-**Меню VPN → Xray не появляется**
+### Меню VPN → Xray не появляется
+
 ```sh
 rm -f /var/lib/php/tmp/opnsense_menu_cache.xml
-# Затем Ctrl+F5
+# Затем Ctrl+F5 в браузере
 ```
 
-**Проверить статус сервисов**
+### Проверить статус сервисов
+
 ```sh
 /usr/local/opnsense/scripts/Xray/xray-service-control.php status
 # {"status":"ok","xray_core":"running","tun2socks":"running"}
 ```
 
-**Проверить соединение через туннель**
+### Проверить соединение через туннель
+
 ```sh
 curl --socks5 127.0.0.1:10808 -s -o /dev/null -w "%{http_code}" https://1.1.1.1 --max-time 5
 # 200 = OK
 ```
 
-**Просмотреть лог boot-скрипта**
-```sh
-cat /tmp/xray_syshook.log
-```
+### Просмотреть логи
 
-**Просмотреть лог ошибок PHP**
 ```sh
+# Boot-лог (автозапуск, назначение IP, reload firewall)
+cat /tmp/xray_syshook.log
+
+# Лог xray-core и tun2socks (ошибки подключения, Reality handshake)
+tail -50 /var/log/xray-core.log
+
+# Лог watchdog (перезапуски процессов)
+tail -50 /var/log/xray-watchdog.log
+
+# Ошибки PHP (проблемы с GUI или API)
 tail -30 /var/lib/php/tmp/PHP_errors.log
 ```
 
-Конфиги генерируются при нажатии Apply:
+### Проверить процессы и PID-файлы
+
+```sh
+# Запущены ли процессы
+ps aux | grep -E 'xray|tun2socks'
+
+# PID-файлы
+cat /var/run/xray_core.pid
+cat /var/run/tun2socks.pid
+
+# Флаг намеренной остановки (если есть — watchdog не перезапустит)
+cat /var/run/xray_stopped.flag
 ```
-/usr/local/etc/xray-core/config.json
-/usr/local/tun2socks/config.yaml
+
+### Проверить TUN-интерфейс
+
+```sh
+ifconfig proxytun2socks0
+# Должен быть UP и иметь inet адрес (например 10.255.0.1)
+
+# Статистика трафика через интерфейс
+netstat -ibn | grep proxytun2socks0
+```
+
+### Проверить конфиги
+
+```sh
+# Конфиг xray-core (генерируется при Apply)
+cat /usr/local/etc/xray-core/config.json
+
+# Конфиг tun2socks
+cat /usr/local/tun2socks/config.yaml
+
+# Сухой прогон конфига без перезапуска сервиса
+/usr/local/opnsense/scripts/Xray/xray-service-control.php validate
+```
+
+### Проверить lock и race condition
+
+```sh
+# Не завис ли lock (если Start/Restart не реагирует)
+ls -la /var/run/xray_start.lock
+# Если файл старый — удалить вручную:
+rm -f /var/run/xray_start.lock
+```
+
+### Ручной запуск и отладка
+
+```sh
+# Запустить вручную с выводом в консоль
+/usr/local/opnsense/scripts/Xray/xray-service-control.php start
+
+# Остановить вручную
+/usr/local/opnsense/scripts/Xray/xray-service-control.php stop
+
+# Перезапустить
+/usr/local/opnsense/scripts/Xray/xray-service-control.php restart
+
+# Запустить boot-скрипт вручную с выводом
+sh /usr/local/etc/rc.syshook.d/start/50-xray
+
+# Запустить watchdog вручную
+/usr/local/opnsense/scripts/Xray/xray-watchdog.php
+```
+
+### Проверить configd
+
+```sh
+# Список зарегистрированных actions xray
+grep -A3 '\[xray' /usr/local/opnsense/service/conf/actions.d/actions_xray.conf
+
+# Перезапустить configd если actions не работают
+service configd restart
+```
+
+### Сброс и переустановка
+
+```sh
+# Полная переустановка без потери конфига OPNsense
+cd /tmp/os-xray-v5
+sh install.sh uninstall
+sh install.sh
 ```
 
 ---
@@ -172,22 +276,27 @@ tail -30 /var/lib/php/tmp/PHP_errors.log
 ```
 os-xray/
 ├── install.sh
-├── Changelog.md
+├── CHANGELOG.md
 └── plugin/
     ├── +MANIFEST                               ← FreeBSD pkg метаданные
     ├── etc/
     │   ├── inc/plugins.inc.d/
-    │   │   └── xray.inc                        ← регистрация сервиса, boot hook
+    │   │   └── xray.inc                        ← регистрация сервиса, boot hook, cron watchdog
+    │   ├── newsyslog.conf.d/
+    │   │   └── xray.conf                       ← ротация xray-core.log и xray-watchdog.log
     │   └── rc.syshook.d/start/
     │       └── 50-xray                         ← автозапуск после ребута
     ├── scripts/Xray/
-    │   └── xray-service-control.php            ← управление xray-core и tun2socks
+    │   ├── xray-service-control.php            ← управление xray-core и tun2socks
+    │   ├── xray-watchdog.php                   ← watchdog: проверка и перезапуск процессов
+    │   ├── xray-ifstats.php                    ← статистика TUN-интерфейса для Diagnostics
+    │   └── xray-testconnect.php                ← проверка соединения через SOCKS5
     ├── service/conf/actions.d/
     │   └── actions_xray.conf                   ← configd actions
     └── mvc/app/
         ├── models/OPNsense/Xray/
-        │   ├── General.xml / General.php       ← модель: enable/disable (v1.0.0)
-        │   ├── Instance.xml / Instance.php     ← модель: параметры подключения (v1.0.1)
+        │   ├── General.xml / General.php       ← модель: enable, watchdog (v1.0.1)
+        │   ├── Instance.xml / Instance.php     ← модель: параметры подключения (v1.0.2)
         │   ├── ACL/ACL.xml                     ← права доступа (page-vpn-xray)
         │   └── Menu/Menu.xml                   ← пункт меню VPN → Xray
         ├── controllers/OPNsense/Xray/
@@ -197,7 +306,7 @@ os-xray/
         │   └── Api/
         │       ├── GeneralController.php
         │       ├── InstanceController.php
-        │       ├── ServiceController.php       ← start/stop/reconfigure/status/log/testconnect
+        │       ├── ServiceController.php       ← start/stop/restart/status/log/validate/diagnostics
         │       └── ImportController.php        ← парсинг VLESS-ссылки
         └── views/OPNsense/Xray/
             └── general.volt
@@ -230,15 +339,23 @@ install -m 0755 /tmp/tun2socks-freebsd-amd64 /usr/local/tun2socks/tun2socks
 
 ## Changelog
 
-Полная история изменений — в файле [Changelog.md](Changelog.md).
+Полная история изменений — в файле [CHANGELOG.md](CHANGELOG.md).
 
 | Версия | Что изменилось |
 |--------|---------------|
+| 1.9.2  | Фикс fatal error tun2socks при stop, ротация watchdog лога |
+| 1.9.1  | Хотфикс validate: синтаксис xray -test, расширение .json для tempnam |
+| 1.9.0  | Улучшен hint для поля SOCKS5 Listen Address |
+| 1.8.0  | Аудит безопасности: фиксы proc_kill, watchdog stopped flag, validate tempfile |
+| 1.7.0  | Фикс блокировки GUI, фикс ifstats bytes, запуск 50-xray из do_start |
+| 1.6.0  | BUG-5/9, Watchdog E1, Diagnostics E4, Validate Config E5 |
+| 1.5.0  | Ротация лога, кнопки Start/Stop/Restart, вкладка Xray Core Log |
+| 1.4.0  | Аудит безопасности P0-P2, xray-testconnect, flock, stderr в лог |
 | 1.3.0  | Версионирование моделей, `+MANIFEST`, `Changelog.md` |
-| 1.2.0  | Вкладка Log, кнопка Test Connection, интервал статуса 5 с, hints для полей |
-| 1.1.0  | Надёжный install.sh: PHP-парсинг конфигов, `set -u`, check_port, ротация лога |
-| 1.0.1  | Исправлен loglevel, TUN destroy при stop, реальный статус reconfigure, flock |
-| 1.0.0  | ACL, валидация UUID и server_address, санитизация ImportController |
+| 1.2.0  | Вкладка Log, кнопка Test Connection, интервал статуса 5 с |
+| 1.1.0  | Надёжный install.sh: PHP-парсинг конфигов, check_port, ротация лога |
+| 1.0.1  | Исправлен loglevel, TUN destroy при stop, flock |
+| 1.0.0  | ACL, валидация UUID, санитизация ImportController |
 | 0.9.0  | Первоначальный релиз |
 
 ---
