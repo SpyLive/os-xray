@@ -58,6 +58,17 @@ Firewall Rules (селективная маршрутизация)
 
 ## Установка
 
+**Вариант 1 — через git clone (рекомендуется)**
+
+```sh
+cd /tmp
+git clone https://github.com/MrTheory/os-xray.git
+cd os-xray
+sh install.sh
+```
+
+**Вариант 2 — через архив**
+
 ```sh
 fetch -o /tmp/os-xray-v5.tar https://raw.githubusercontent.com/MrTheory/os-xray/refs/heads/main/os-xray-v5.tar
 cd /tmp && tar xf os-xray-v5.tar && cd os-xray-v5
