@@ -351,12 +351,12 @@ function do_stop(?string $tunIface = null): void
         $tunIface = $c['tun_iface'] ?? 'proxytun2socks0';
     }
 
-    // Останавливаем tun2socks первым — он держит TUN open
+    // Останавливаем tun2socks первым — он держит TUN open.
+    // proc_kill() ждёт завершения процесса до 3 секунд (SIGTERM → ждём → SIGKILL).
+    // tun2socks сам уничтожает TUN-интерфейс при завершении — tun_destroy() не нужен.
+    // Вызов tun_destroy() ДО завершения tun2socks приводит к fatal error в его логе:
+    // "failed to destroy interface: device not configured" — интерфейс уже уничтожен нами.
     proc_kill(T2S_PID);
-    // Небольшая пауза: даём tun2socks закрыть fd на интерфейс
-    usleep(300000);
-    // B9: уничтожаем TUN-интерфейс
-    tun_destroy($tunIface);
     // Останавливаем xray-core
     proc_kill(XRAY_PID);
 

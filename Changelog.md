@@ -5,6 +5,16 @@ Format: [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.9.2] — 2026-03-04
+
+### Fixed
+- **`xray-service-control.php` — `do_stop()`**: убраны `usleep(300000)` и `tun_destroy()`. tun2socks сам уничтожает TUN-интерфейс при получении SIGTERM. Принудительный `ifconfig destroy` до завершения процесса вызывал `fatal error` в логе tun2socks: `"failed to destroy interface: device not configured"`.
+
+### Added
+- **`newsyslog.conf.d/xray.conf`**: добавлена ротация `/var/log/xray-watchdog.log` (644, 3 файла, 100 KB).
+
+---
+
 ## [1.9.1] — 2026-03-01
 
 ### Хотфикс — Validate Config: пустой ответ от configd
