@@ -5,6 +5,27 @@ Format: [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.9.3] — 2026-03-05
+
+### Fixed (Приоритет 1 — баги)
+- **[P1-1]** `xray-service-control.php`: `lo0_alias_ensure()` — `implode('\n')` заменён на `implode("\n")`; одинарные кавычки давали literal `\n`, из-за чего `strpos()` не находил существующий alias и добавлял его повторно при каждом старте
+- **[P1-2]** `xray-service-control.php`: `socks5_port` — добавлен `?: 10808` fallback; пустое поле в config.xml давало `(int)'' = 0`, xray-core слушал на порту 0
+- **[P1-3]** `xray-service-control.php`: дублированная JSON-структура конфига (~40 строк) в `xray_write_config()` и `case 'validate'` вынесена в `xray_build_config_array(array $c): array`
+- **[P1-4]** `xray-service-control.php`: `case 'validate'` — `tempnam()` создавал файл, а конкатенация `.json` — второй; оригинальный файл-сирота оставался в `/tmp`; добавлен `@unlink($tmpBase)` сразу после создания
+- **[testconnect]** `xray-testconnect.php`: таймаут увеличен с 5с до 10с (при высоком RTT до VPN-сервера SOCKS5+TLS handshake не укладывался); адрес прокси теперь читается из `socks5_listen` конфига вместо хардкода `127.0.0.1`
+
+### Added (Приоритет 2 — улучшения)
+- **[P2-5/6] Bypass Networks** — новое поле `bypass_networks` в Instance.xml (v1.0.4): пользовательский CIDR-список сетей для direct routing (обход VPN); дефолт `10.0.0.0/8,172.16.0.0/12,192.168.0.0/16`; хардкод в `routing.rules` заменён на конфигурируемое значение; добавлена секция Routing в GUI-форме
+- **[P2-7] Автообновление Diagnostics** — `setInterval(loadDiagnostics, 30000)` при активной вкладке Diagnostics; данные обновляются автоматически каждые 30 секунд
+- **[P2-8] Copy Debug Info** — кнопка в панели Diagnostics; собирает JSON diagnostics + Boot Log + Core Log; показывает в модалке с автовыделением текста для копирования в issue-репорты
+- **[P2-9] Ping RTT** — `xray-ifstats.php`: добавлен `ping -c 3 -W 2` до VPN-сервера; RTT отображается в Diagnostics; fallback "N/A" если ping заблокирован
+
+### Tests
+- Добавлен тест `writeConfigCustomBypassNetworks` — проверяет что кастомные CIDR-сети корректно попадают в routing rules
+- Обновлены `sampleConfig()`, `MockConfigObject`, `getConfigReturnsAllFields` для поля `bypass_networks`
+
+---
+
 ## [1.9.2] — 2026-03-04
 
 ### Fixed

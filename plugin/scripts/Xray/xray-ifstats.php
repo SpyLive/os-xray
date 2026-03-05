@@ -155,6 +155,20 @@ if ($ifRc === 0) {
 $xrayUptimeSecs = proc_uptime(XRAY_PID);
 $t2sUptimeSecs  = proc_uptime(T2S_PID);
 
+// ─── P2-9: Ping RTT до VPN-сервера ──────────────────────────────────────────
+$serverAddr = (string)($inst->server_address ?? '');
+$pingRtt = 'N/A';
+if ($serverAddr !== '') {
+    exec('/sbin/ping -c 3 -W 2 ' . escapeshellarg($serverAddr) . ' 2>/dev/null', $pingOut, $pingRc);
+    if ($pingRc === 0) {
+        // Ищем "round-trip min/avg/max/stddev = 1.234/2.345/3.456/0.567 ms"
+        $pingOutput = implode("\n", $pingOut);
+        if (preg_match('/round-trip.+=\s*[\d.]+\/([\d.]+)\//', $pingOutput, $pm)) {
+            $pingRtt = $pm[1] . ' ms';
+        }
+    }
+}
+
 // ─── Сборка результата ────────────────────────────────────────────────────────
 $result = [
     'tun_interface' => $tunIface,
@@ -171,6 +185,8 @@ $result = [
     'xray_uptime_secs'  => $xrayUptimeSecs,
     'tun2socks_uptime'      => format_uptime($t2sUptimeSecs),
     'tun2socks_uptime_secs' => $t2sUptimeSecs,
+    'server_address'        => $serverAddr,
+    'ping_rtt'              => $pingRtt,
 ];
 
 function format_bytes(int $bytes): string

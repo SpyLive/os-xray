@@ -16,17 +16,20 @@ require_once('config.inc');
 $cfg  = OPNsense\Core\Config::getInstance()->object();
 $inst = $cfg->OPNsense->xray->instance ?? null;
 
-// Читаем порт из конфига; fallback на дефолт 10808
-$port = (int)(string)($inst->socks5_port ?? 10808);
+// Читаем адрес и порт из конфига
+$listen = (string)($inst->socks5_listen ?? '127.0.0.1') ?: '127.0.0.1';
+$port   = (int)(string)($inst->socks5_port ?? 10808);
 
 // Защита: порт должен быть в допустимом диапазоне
 if ($port < 1 || $port > 65535) {
     $port = 10808;
 }
 
-$proxy   = '127.0.0.1:' . $port;
+// 0.0.0.0 слушает на всех интерфейсах — для теста подключаемся на loopback
+$connectAddr = ($listen === '0.0.0.0') ? '127.0.0.1' : $listen;
+$proxy   = $connectAddr . ':' . $port;
 $target  = 'https://1.1.1.1';
-$timeout = '5';
+$timeout = '10';
 
 exec(
     '/usr/local/bin/curl'

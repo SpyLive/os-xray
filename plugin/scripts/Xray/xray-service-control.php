@@ -53,19 +53,27 @@ function xray_get_config(): array
         'shortid'      => (string)($inst->reality_shortid     ?? ''),
         'fingerprint'  => (string)($inst->reality_fingerprint ?? 'chrome'),
         'socks5_listen' => (string)($inst->socks5_listen ?? '127.0.0.1') ?: '127.0.0.1',
-        'socks5_port'  => (int)(string)($inst->socks5_port    ?? 10808),
+        'socks5_port'  => (int)(string)($inst->socks5_port    ?? 10808) ?: 10808,
         'tun_iface'    => (string)($inst->tun_interface       ?? 'proxytun2socks0'),
         'mtu'          => (int)(string)($inst->mtu            ?? 1500),
         'loglevel'     => $loglevel,
+        'bypass_networks' => (string)($inst->bypass_networks ?? '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16') ?: '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16',
     ];
 }
 
-// ─── Write xray config.json ───────────────────────────────────────────────────
-function xray_write_config(array $c): void
+// ─── Build xray config array ─────────────────────────────────────────────────
+function xray_build_config_array(array $c): array
 {
     $flow = ($c['flow'] === 'none' || $c['flow'] === '') ? '' : $c['flow'];
 
-    $cfg = [
+    // P2-5/6: парсим bypass_networks из comma-separated строки
+    $bypassRaw = $c['bypass_networks'] ?? '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16';
+    $bypassNets = array_values(array_filter(array_map('trim', explode(',', $bypassRaw))));
+    if (empty($bypassNets)) {
+        $bypassNets = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
+    }
+
+    return [
         'log'      => ['loglevel' => $c['loglevel'] ?: 'warning'],
         'inbounds' => [[
             'tag'      => 'socks-in',
@@ -108,11 +116,17 @@ function xray_write_config(array $c): void
             'domainStrategy' => 'IPIfNonMatch',
             'rules' => [[
                 'type'        => 'field',
-                'ip'          => ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'],
+                'ip'          => $bypassNets,
                 'outboundTag' => 'direct',
             ]],
         ],
     ];
+}
+
+// ─── Write xray config.json ───────────────────────────────────────────────────
+function xray_write_config(array $c): void
+{
+    $cfg = xray_build_config_array($c);
 
     if (!is_dir(XRAY_CONF_DIR)) {
         mkdir(XRAY_CONF_DIR, 0750, true);
@@ -290,7 +304,7 @@ function lo0_alias_ensure(string $addr): void
         echo "WARNING: Cannot read lo0 interface\n";
         return;
     }
-    $ifOutput = implode('\n', $out);
+    $ifOutput = implode("\n", $out);
     if (strpos($ifOutput, $addr) !== false) {
         return; // alias уже есть
     }
@@ -500,62 +514,18 @@ switch ($action) {
             echo "ERROR: No xray config found in OPNsense config.xml\n";
             exit(1);
         }
-        $tmpConf = tempnam('/tmp', 'xray-validate-') . '.json';
-        if ($tmpConf === false) {
+        // P1-BUG4 FIX: tempnam() создаёт файл, а конкатенация .json — второй файл.
+        // Удаляем оригинальный файл от tempnam() сразу, работаем только с .json.
+        $tmpBase = tempnam('/tmp', 'xray-validate-');
+        if ($tmpBase === false) {
             echo "ERROR: Cannot create temp file for validation\n";
             exit(1);
         }
+        $tmpConf = $tmpBase . '.json';
+        @unlink($tmpBase); // удаляем файл-сироту от tempnam()
         try {
-            // Генерируем конфиг прямо во временный файл
-            $flow = ($c['flow'] === 'none' || $c['flow'] === '') ? '' : $c['flow'];
-            $cfg = [
-                'log'      => ['loglevel' => $c['loglevel'] ?: 'warning'],
-                'inbounds' => [[
-                    'tag'      => 'socks-in',
-                    'port'     => $c['socks5_port'],
-                    'listen'   => $c['socks5_listen'],
-                    'protocol' => 'socks',
-                    'settings' => ['auth' => 'noauth', 'udp' => true, 'ip' => $c['socks5_listen']],
-                ]],
-                'outbounds' => [
-                    [
-                        'tag'      => 'proxy',
-                        'protocol' => 'vless',
-                        'settings' => [
-                            'vnext' => [[
-                                'address' => $c['server'],
-                                'port'    => $c['port'],
-                                'users'   => [[
-                                    'id'         => $c['uuid'],
-                                    'encryption' => 'none',
-                                    'flow'       => $flow,
-                                ]],
-                            ]],
-                        ],
-                        'streamSettings' => [
-                            'network'         => 'tcp',
-                            'security'        => 'reality',
-                            'realitySettings' => [
-                                'serverName'  => $c['sni'],
-                                'fingerprint' => $c['fingerprint'],
-                                'show'        => false,
-                                'publicKey'   => $c['pubkey'],
-                                'shortId'     => $c['shortid'],
-                                'spiderX'     => '',
-                            ],
-                        ],
-                    ],
-                    ['tag' => 'direct', 'protocol' => 'freedom'],
-                ],
-                'routing' => [
-                    'domainStrategy' => 'IPIfNonMatch',
-                    'rules' => [[
-                        'type'        => 'field',
-                        'ip'          => ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'],
-                        'outboundTag' => 'direct',
-                    ]],
-                ],
-            ];
+            // P1-BUG3 FIX: используем xray_build_config_array() вместо дублирования структуры
+            $cfg = xray_build_config_array($c);
             file_put_contents(
                 $tmpConf,
                 json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)

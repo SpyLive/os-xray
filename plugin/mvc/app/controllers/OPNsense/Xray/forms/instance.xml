@@ -98,6 +98,17 @@
         <hint>Default: 1500. Reduce to 1380 if large packets (e.g. SSH, large downloads) fail or are slow.</hint>
     </field>
     <field>
+        <type>header</type>
+        <label>Routing</label>
+    </field>
+    <field>
+        <id>instance.bypass_networks</id>
+        <label>Bypass Networks</label>
+        <type>text</type>
+        <help>Comma-separated list of CIDR networks that should bypass the VPN tunnel and go direct. These networks will be routed via the 'direct' (freedom) outbound instead of the proxy.</help>
+        <hint>Default: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16. Add your own networks or IPs (e.g. 100.64.0.0/10,203.0.113.5/32)</hint>
+    </field>
+    <field>
         <id>instance.loglevel</id>
         <label>Xray Log Level</label>
         <type>dropdown</type>

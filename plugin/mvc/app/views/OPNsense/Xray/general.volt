@@ -280,14 +280,71 @@
                 $('#diag_pkts_out').text(data.pkts_out != null ? data.pkts_out.toLocaleString() : '—');
                 $('#diag_xray_uptime').text(data.xray_uptime || '—');
                 $('#diag_t2s_uptime').text(data.tun2socks_uptime || '—');
+                $('#diag_ping_rtt').text(data.ping_rtt || 'N/A');
             });
         }
 
+        // P2-7: автообновление каждые 30с пока вкладка Diagnostics активна
+        var diagAutoRefresh = null;
         $('a[href="#diagnostics"]').on('shown.bs.tab', function () {
             loadDiagnostics();
+            if (!diagAutoRefresh) {
+                diagAutoRefresh = setInterval(function () {
+                    if ($('#diagnostics').hasClass('active')) {
+                        loadDiagnostics();
+                    }
+                }, 30000);
+            }
         });
         $('#btnDiagRefresh').click(function () {
             loadDiagnostics();
+        });
+
+        // ── P2-8: Copy Debug Info ────────────────────────────────────
+        $('#btnCopyDebug').click(function () {
+            var $btn = $(this).prop('disabled', true);
+            var $res = $('#copyDebugResult');
+            $res.removeClass('text-success text-danger').text("{{ lang._('Collecting...') }}");
+
+            // Собираем данные параллельно: diagnostics + логи
+            var diagData = {}, bootLog = '', coreLog = '';
+            var diagDone = $.Deferred(), bootDone = $.Deferred(), coreDone = $.Deferred();
+
+            ajaxGet('/api/xray/service/diagnostics', {}, function (data) {
+                diagData = data;
+                diagDone.resolve();
+            });
+            $.post('/api/xray/service/log', null, function (data) {
+                bootLog = (data && data.log) || '';
+                bootDone.resolve();
+            }, 'json').fail(function () { bootDone.resolve(); });
+            $.post('/api/xray/service/xraylog', null, function (data) {
+                coreLog = (data && data.log) || '';
+                coreDone.resolve();
+            }, 'json').fail(function () { coreDone.resolve(); });
+
+            $.when(diagDone, bootDone, coreDone).done(function () {
+                var info = "=== os-xray Debug Info ===\n"
+                    + "Date: " + new Date().toISOString() + "\n\n"
+                    + "--- Diagnostics ---\n"
+                    + JSON.stringify(diagData, null, 2) + "\n\n"
+                    + "--- Boot Log (last 150 lines) ---\n"
+                    + bootLog + "\n\n"
+                    + "--- Core Log (last 200 lines) ---\n"
+                    + coreLog + "\n";
+
+                // Показываем модалку с текстом — clipboard API ненадёжен после async
+                $('#debugInfoContent').val(info);
+                $('#debugInfoModal').modal('show');
+                // Автовыделение текста при показе модалки
+                $('#debugInfoModal').one('shown.bs.modal', function () {
+                    var ta = document.getElementById('debugInfoContent');
+                    ta.focus();
+                    ta.select();
+                });
+                $res.addClass('text-success').text("{{ lang._('Use Ctrl+C / Cmd+C to copy') }}");
+                $btn.prop('disabled', false);
+            });
         });
 
         // ── Tab hash ──────────────────────────────────────────────────
@@ -364,6 +421,10 @@
             <button id="btnDiagRefresh" class="btn btn-sm btn-default">
                 <i class="fa fa-refresh"></i> {{ lang._('Refresh') }}
             </button>
+            <button id="btnCopyDebug" class="btn btn-sm btn-default">
+                <i class="fa fa-clipboard"></i> {{ lang._('Copy Debug Info') }}
+            </button>
+            <span id="copyDebugResult" style="font-size: 12px;"></span>
             <span class="text-muted" style="font-size: 12px;">{{ lang._('TUN interface stats and process uptime') }}</span>
         </div>
 
@@ -381,6 +442,7 @@
                     <tr><th>{{ lang._('Packets Out') }}</th><td id="diag_pkts_out">—</td></tr>
                     <tr><th>{{ lang._('xray-core Uptime') }}</th><td id="diag_xray_uptime">—</td></tr>
                     <tr><th>{{ lang._('tun2socks Uptime') }}</th><td id="diag_t2s_uptime">—</td></tr>
+                    <tr><th>{{ lang._('Server Ping RTT') }}</th><td id="diag_ping_rtt">—</td></tr>
                 </tbody>
             </table>
             <p id="diagError" class="text-danger" style="display:none;"></p>
@@ -474,6 +536,30 @@
                 <button type="button" class="btn btn-primary" id="importParseBtn">
                     <i class="fa fa-magic"></i> {{ lang._('Parse & Fill') }}
                 </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Debug Info Modal -->
+<div class="modal fade" id="debugInfoModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+                <h4 class="modal-title">
+                    <i class="fa fa-clipboard"></i> {{ lang._('Debug Info') }}
+                </h4>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted">
+                    {{ lang._('Select all (Ctrl+A / Cmd+A) and copy (Ctrl+C / Cmd+C), then paste into your issue report.') }}
+                </p>
+                <textarea id="debugInfoContent" readonly cols="1000"
+                          style="font-family: monospace; font-size: 11px; width: 100% !important; min-width: 100% !important; max-width: 100% !important; height: 70vh; resize: vertical; background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 4px; border: 1px solid #444; display: block; box-sizing: border-box; white-space: pre; overflow-x: auto;"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">{{ lang._('Close') }}</button>
             </div>
         </div>
     </div>

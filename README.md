@@ -24,7 +24,9 @@ Xray-core с протоколом VLESS+Reality + tun2socks — нативный
 - **Кнопка Validate Config** — сухой прогон конфига через `xray -test` без остановки сервиса
 - **Кнопка Test Connection** — проверяет, что xray-core реально проксирует трафик
 - **Вкладка Log** — Boot Log и Xray Core Log прямо в GUI
-- **Вкладка Diagnostics** — статистика TUN-интерфейса: IP, MTU, байты, пакеты, uptime процессов
+- **Вкладка Diagnostics** — статистика TUN-интерфейса: IP, MTU, байты, пакеты, uptime процессов, Ping RTT до VPN-сервера; автообновление каждые 30 секунд
+- **Кнопка Copy Debug Info** — собирает diagnostics + логи в модалку для копирования в issue-репорт
+- **Bypass Networks** — настраиваемый список CIDR-сетей для обхода VPN (direct routing)
 - **Watchdog** — автоматический перезапуск при падении xray-core или tun2socks (настраивается)
 - **Автозапуск после ребута** — интерфейс поднимается автоматически, нажимать Apply вручную не нужно
 - ACL-права — доступ к GUI и API только для авторизованных пользователей с ролью `page-vpn-xray`
@@ -35,7 +37,7 @@ Xray-core с протоколом VLESS+Reality + tun2socks — нативный
 
 ```
 xray-core (VLESS+Reality)
-    ↓ SOCKS5 127.0.0.1:10808
+    ↓ SOCKS5 (по умолчанию 127.0.0.1:10808, настраивается)
 tun2socks
     ↓ TUN интерфейс proxytun2socks0
 OPNsense Gateway PROXYTUN_GW
@@ -90,10 +92,11 @@ sh install.sh
 Обнови браузер (`Ctrl+F5`) → **VPN → Xray**
 
 1. Вкладка **Instance** → кнопка **Import VLESS link** → вставь ссылку → **Parse & Fill**
-2. Вкладка **General** → установи галку **Enable Xray** (и **Enable Watchdog** по желанию)
-3. Нажми **Apply**
-4. Кнопка **Test Connection** — убедись, что туннель работает (показывает HTTP 200)
-5. Кнопка **Validate Config** — проверить конфиг без перезапуска сервиса
+2. *(Опционально)* Поле **Bypass Networks** — укажи сети, которые должны идти в обход VPN (по умолчанию: частные сети 10/8, 172.16/12, 192.168/16)
+3. Вкладка **General** → установи галку **Enable Xray** (и **Enable Watchdog** по желанию)
+4. Нажми **Apply**
+5. Кнопка **Test Connection** — убедись, что туннель работает (показывает HTTP 200)
+6. Кнопка **Validate Config** — проверить конфиг без перезапуска сервиса
 
 ---
 
@@ -307,7 +310,7 @@ os-xray/
     └── mvc/app/
         ├── models/OPNsense/Xray/
         │   ├── General.xml / General.php       ← модель: enable, watchdog (v1.0.1)
-        │   ├── Instance.xml / Instance.php     ← модель: параметры подключения (v1.0.2)
+        │   ├── Instance.xml / Instance.php     ← модель: параметры подключения (v1.0.4)
         │   ├── ACL/ACL.xml                     ← права доступа (page-vpn-xray)
         │   └── Menu/Menu.xml                   ← пункт меню VPN → Xray
         ├── controllers/OPNsense/Xray/
@@ -317,7 +320,7 @@ os-xray/
         │   └── Api/
         │       ├── GeneralController.php
         │       ├── InstanceController.php
-        │       ├── ServiceController.php       ← start/stop/restart/status/log/validate/diagnostics
+        │       ├── ServiceController.php       ← start/stop/restart/status/log/validate/diagnostics/testconnect
         │       └── ImportController.php        ← парсинг VLESS-ссылки
         └── views/OPNsense/Xray/
             └── general.volt
@@ -354,6 +357,7 @@ install -m 0755 /tmp/tun2socks-freebsd-amd64 /usr/local/tun2socks/tun2socks
 
 | Версия | Что изменилось |
 |--------|---------------|
+| 1.9.3  | Фиксы P1 (implode, socks5_port, validate tempfile, дедупликация), Bypass Networks, Copy Debug Info, Ping RTT, автообновление Diagnostics |
 | 1.9.2  | Фикс fatal error tun2socks при stop, ротация watchdog лога |
 | 1.9.1  | Хотфикс validate: синтаксис xray -test, расширение .json для tempnam |
 | 1.9.0  | Улучшен hint для поля SOCKS5 Listen Address |
@@ -388,8 +392,8 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 ## Автор
 
-Меркулов Павел Сергеевич  
-Февраль 2026
+Меркулов Павел Сергеевич
+Февраль — Март 2026
 
 ---
 

@@ -2,7 +2,8 @@
 <model>
     <mount>//OPNsense/xray/instance</mount>
     <description>Xray Instance Settings</description>
-    <version>1.0.3</version>
+    <!-- v1.0.4: bypass_networks — пользовательский CIDR-список сетей, идущих в обход VPN (direct routing) -->
+    <version>1.0.4</version>
     <items>
         <!-- v1.0.0: добавлена валидация UUID (Mask) и server_address (Mask) -->
         <!-- v1.0.1: исправлен loglevel — тег-ключ <e> заменён на <loglevel_error>;
@@ -86,6 +87,14 @@
              "error" не может быть именем XML-тега в PhalconMVC OptionField (зарезервировано).
              Используем <loglevel_error> как ключ; нормализацию делаем в xray-service-control.php.
              Для обратной совместимости со старым ключом "e" — маппинг оставлен в PHP. -->
+        <!-- v1.0.4: bypass_networks — CIDR-список сетей для direct routing (обход VPN).
+             Comma-separated. Пустое поле = дефолт 10/8, 172.16/12, 192.168/16. -->
+        <bypass_networks type="TextField">
+            <Default>10.0.0.0/8,172.16.0.0/12,192.168.0.0/16</Default>
+            <Required>N</Required>
+            <Mask>/^(\s*((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?)(\/([0-9]|[12]\d|3[0-2]))?\s*)(,\s*((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?)(\/([0-9]|[12]\d|3[0-2]))?\s*)*$/</Mask>
+            <ValidationMessage>Must be comma-separated IPv4 CIDR networks (e.g. 10.0.0.0/8,192.168.1.0/24)</ValidationMessage>
+        </bypass_networks>
         <loglevel type="OptionField">
             <Default>warning</Default>
             <OptionValues>
