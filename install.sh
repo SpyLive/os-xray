@@ -481,9 +481,30 @@ install -d -m 0750 /usr/local/tun2socks
 echo "[OK]  Plugin files installed."
 
 # ── Шаг 4: Импорт существующего конфига ──────────────────────────────────────
+# Импорт нужен только при ПЕРВОЙ установке — когда в config.xml ещё нет секции xray,
+# но есть файловые конфиги от ручной установки xray-core/tun2socks.
+# При обновлении (повторный install.sh) config.xml уже содержит настройки из GUI —
+# перезаписывать их из файлового конфига нельзя (затрёт изменения пользователя).
 echo ""
 echo "==> Step 4: Importing existing config (if found)..."
-if [ "$HAS_EXISTING_CONFIG" = "1" ]; then
+
+CONFIG_XML_HAS_XRAY=0
+_PHP_OUT=$(php -r '
+set_include_path("/usr/local/etc/inc" . PATH_SEPARATOR . get_include_path());
+require_once("config.inc");
+$cfg = OPNsense\Core\Config::getInstance()->object();
+$inst = $cfg->OPNsense->xray->instance ?? null;
+if ($inst && ((string)($inst->server_address ?? "") !== "" || (string)($inst->uuid ?? "") !== "")) {
+    echo "1";
+}
+' 2>/dev/null) || true
+if [ "$_PHP_OUT" = "1" ]; then
+    CONFIG_XML_HAS_XRAY=1
+fi
+
+if [ "$CONFIG_XML_HAS_XRAY" = "1" ]; then
+    echo "[SKIP] config.xml already has Xray settings (from GUI). Skipping file import to preserve your configuration."
+elif [ "$HAS_EXISTING_CONFIG" = "1" ]; then
     import_existing_config
 else
     echo "[SKIP] No existing config to import."
@@ -509,7 +530,15 @@ echo "  os-xray v${PLUGIN_VERSION} installed successfully!"
 echo "============================================================"
 echo ""
 
-if [ "$HAS_EXISTING_CONFIG" = "1" ]; then
+if [ "$CONFIG_XML_HAS_XRAY" = "1" ]; then
+    echo "  Existing Xray settings preserved in config.xml."
+    echo ""
+    echo "  Quick steps:"
+    echo "  1. Refresh browser (Ctrl+F5) → VPN → Xray"
+    echo "  2. Verify your settings are intact"
+    echo "  3. Click Apply if needed"
+    echo ""
+elif [ "$HAS_EXISTING_CONFIG" = "1" ]; then
     echo "  Existing config was detected and imported automatically."
     echo "  Your settings are already loaded in the GUI."
     echo ""
