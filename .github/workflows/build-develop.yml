@@ -70,7 +70,7 @@ jobs:
           echo "  Commit: ${{ steps.commit.outputs.SHORT_HASH }}"
           echo "  Date: ${{ steps.date.outputs.DATE }}"
           echo "  Archive: ${{ env.ARCHIVE_NAME }}.tar.gz"
-          echo "  Versioned archive: ${{ env.ARCHIVE_NAME_VER }}.tar.gz
+          echo "  Versioned archive: ${{ env.ARCHIVE_NAME_VER }}.tar.gz"
           ls -lh "${{ env.ARCHIVE_NAME }}.tar.gz"
           ls -lh "${{ env.ARCHIVE_NAME_VER }}.tar.gz"
 
