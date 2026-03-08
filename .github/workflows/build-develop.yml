@@ -82,6 +82,7 @@ jobs:
           DOWNLOAD_URL_VER="https://github.com/${GITHUB_REPOSITORY}/releases/download/develop/${ARCHIVE_NAME_VER}.tar.gz"
 
           {
+            echo "BODY<<EOF"
             echo ""
             echo "---"
             echo "### Manual installation"
@@ -100,7 +101,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest-dev
+          tag_name: develop
           name: "opnsense-xray (Develop branch)"
           body: ${{ steps.changelog.outputs.BODY }}
           draft: false
