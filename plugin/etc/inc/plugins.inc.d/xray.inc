@@ -9,7 +9,7 @@ function xray_enabled(): bool
 
 function xray_configure(): array
 {
-    return [10 => ['xray_configure_do']];
+    return ['bootup' => ['xray_configure_do:10']];
 }
 
 /**
