@@ -9,7 +9,7 @@ define('XRAY_CONF_DIR',     '/usr/local/etc/xray-core');
 define('T2S_BIN',           '/usr/local/tun2socks/tun2socks');
 define('T2S_CONF_DIR',      '/usr/local/tun2socks');
 // BUG-7 FIX: stderr демонов в лог-файл вместо /dev/null
-define('XRAY_DAEMON_LOG',   '/var/log/xray-core.log');
+define('XRAY_DAEMON_LOG',   '/var/log/xray-core.log'); // общий лог (fallback)
 define('XRAY_VERSION_FILE', '/usr/local/opnsense/mvc/app/models/OPNsense/Xray/version.txt');
 
 // ─── Per-instance path functions ─────────────────────────────────────────────
@@ -38,6 +38,10 @@ function xray_lock_path(string $inst_uuid): string
 function xray_stopped_flag(string $inst_uuid): string
 {
     return "/var/run/xray_stopped_{$inst_uuid}.flag";
+}
+function xray_instance_log(string $inst_uuid): string
+{
+    return "/var/log/xray-core-{$inst_uuid}.log";
 }
 
 // ─── Read config from OPNsense config.xml ────────────────────────────────────
@@ -299,10 +303,10 @@ function proc_kill(string $pidfile): void
     @unlink($pidfile);
 }
 
-function proc_start(string $bin, string $args, string $pidfile): void
+function proc_start(string $bin, string $args, string $pidfile, string $logfile = ''): void
 {
     // BUG-7 FIX: stderr демона → XRAY_DAEMON_LOG вместо /dev/null
-    $log = escapeshellarg(XRAY_DAEMON_LOG);
+    $log = escapeshellarg($logfile !== '' ? $logfile : XRAY_DAEMON_LOG);
     exec('/usr/sbin/daemon -p ' . escapeshellarg($pidfile)
        . ' ' . escapeshellarg($bin) . ' ' . $args . ' >> ' . $log . ' 2>&1 &');
 }
@@ -481,12 +485,13 @@ function do_start(array $c): bool
             return false;
         }
 
+        $instLog = xray_instance_log($inst_uuid);
         if (!proc_is_running(xray_pid_path($inst_uuid))) {
-            proc_start(XRAY_BIN, 'run -c ' . escapeshellarg(xray_conf_path($inst_uuid)), xray_pid_path($inst_uuid));
+            proc_start(XRAY_BIN, 'run -c ' . escapeshellarg(xray_conf_path($inst_uuid)), xray_pid_path($inst_uuid), $instLog);
             usleep(800000);
         }
         if (!proc_is_running(t2s_pid_path($inst_uuid))) {
-            proc_start(T2S_BIN, '-config ' . escapeshellarg(t2s_conf_path($inst_uuid)), t2s_pid_path($inst_uuid));
+            proc_start(T2S_BIN, '-config ' . escapeshellarg(t2s_conf_path($inst_uuid)), t2s_pid_path($inst_uuid), $instLog);
             usleep(800000);
         }
 

@@ -10,12 +10,29 @@
 
 require_once('config.inc');
 
-define('XRAY_PID', '/var/run/xray_core.pid');
-define('T2S_PID',  '/var/run/tun2socks.pid');
+// ─── Per-instance path helpers (mirrors xray-service-control.php) ────────────
+function xray_pid_path(string $uuid): string  { return "/var/run/xray_core_{$uuid}.pid"; }
+function t2s_pid_path(string $uuid): string   { return "/var/run/tun2socks_{$uuid}.pid"; }
 
 // ─── Читаем config ────────────────────────────────────────────────────────────
-$cfg  = OPNsense\Core\Config::getInstance()->object();
-$inst = $cfg->OPNsense->xray->instance ?? null;
+// Принимаем UUID инстанса как первый аргумент (передаётся из actions_xray.conf %1)
+$instUuid = isset($argv[1]) ? preg_replace('/[^0-9a-fA-F\-]/', '', trim($argv[1])) : '';
+
+$cfg = OPNsense\Core\Config::getInstance()->object();
+$ins = $cfg->OPNsense->xray->instances ?? null;
+
+$inst = null;
+if ($ins) {
+    foreach ($ins->instance as $candidate) {
+        if ($instUuid === '' || (string)$candidate['uuid'] === $instUuid) {
+            $inst = $candidate;
+            if ($instUuid !== '') break; // точное совпадение — берём его
+        }
+    }
+}
+
+// Финальный UUID для PID-путей
+$instUuid = $inst ? (string)$inst['uuid'] : $instUuid;
 $tunIface = (string)($inst->tun_interface ?? 'proxytun2socks0');
 
 // ─── Uptime процесса по PID-файлу ────────────────────────────────────────────
@@ -152,10 +169,10 @@ if ($ifRc === 0) {
 }
 
 // ─── Uptime процессов ─────────────────────────────────────────────────────────
-$xrayUptimeSecs = proc_uptime(XRAY_PID);
-$t2sUptimeSecs  = proc_uptime(T2S_PID);
+$xrayUptimeSecs = $instUuid !== '' ? proc_uptime(xray_pid_path($instUuid)) : null;
+$t2sUptimeSecs  = $instUuid !== '' ? proc_uptime(t2s_pid_path($instUuid))  : null;
 
-// ─── P2-9: Ping RTT до VPN-сервера ──────────────────────────────────────────
+// ─── Ping RTT до VPN-сервера ─────────────────────────────────────────────────
 $serverAddr = (string)($inst->server_address ?? '');
 $pingRtt = 'N/A';
 if ($serverAddr !== '') {
