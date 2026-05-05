@@ -361,6 +361,27 @@ PHPEOF
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# INSTALL HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+# install_tree <src_dir> <dst_dir> <file_mode>
+# Recursive installation of each file from <src_dir> to <dst_dir> with <file_mode> modifier
+install_tree() {
+    _src="$1"
+    _dst="$2"
+    _fmode="${3:-0644}"
+
+    find "$_src" -mindepth 1 -type d | while IFS= read -r _dir; do
+        _rel="${_dir#$_src}"
+        install -d "${_dst}${_rel}"
+    done
+    find "$_src" -type f | while IFS= read -r _file; do
+        _rel="${_file#$_src}"
+        install -m "$_fmode" "$_file" "${_dst}${_rel}"
+    done
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # INSTALL
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -547,71 +568,43 @@ fi
 echo ""
 echo "==> Step 3: Installing plugin files..."
 
+# PHP-scripts (executable)
 install -d /usr/local/opnsense/scripts/Xray
-install -m 0755 "$PLUGIN_DIR/scripts/Xray/xray-service-control.php" \
-                /usr/local/opnsense/scripts/Xray/
-install -m 0755 "$PLUGIN_DIR/scripts/Xray/xray-testconnect.php" \
-                /usr/local/opnsense/scripts/Xray/
-# E1: watchdog — автоперезапуск процессов через cron
-install -m 0755 "$PLUGIN_DIR/scripts/Xray/xray-watchdog.php" \
-                /usr/local/opnsense/scripts/Xray/
-# E4: статистика TUN-интерфейса для панели Diagnostics
-install -m 0755 "$PLUGIN_DIR/scripts/Xray/xray-ifstats.php" \
-                /usr/local/opnsense/scripts/Xray/
+install_tree "$PLUGIN_DIR/scripts/Xray" \
+             "/usr/local/opnsense/scripts/Xray" 0755
 
-install -m 0644 "$PLUGIN_DIR/service/conf/actions.d/actions_xray.conf" \
-                /usr/local/opnsense/service/conf/actions.d/
+# configd actions
+install -d /usr/local/opnsense/service/conf/actions.d
+install_tree "$PLUGIN_DIR/service/conf/actions.d" \
+             "/usr/local/opnsense/service/conf/actions.d" 0644
 
-install -d /usr/local/opnsense/mvc/app/models/OPNsense/Xray/Menu
-install -d /usr/local/opnsense/mvc/app/models/OPNsense/Xray/ACL
-install -m 0644 "$PLUGIN_DIR/mvc/app/models/OPNsense/Xray/ACL/ACL.xml" \
-                /usr/local/opnsense/mvc/app/models/OPNsense/Xray/ACL/
-install -m 0644 "$PLUGIN_DIR/mvc/app/models/OPNsense/Xray/General.xml" \
-                /usr/local/opnsense/mvc/app/models/OPNsense/Xray/
-install -m 0644 "$PLUGIN_DIR/mvc/app/models/OPNsense/Xray/General.php" \
-                /usr/local/opnsense/mvc/app/models/OPNsense/Xray/
-install -m 0644 "$PLUGIN_DIR/mvc/app/models/OPNsense/Xray/Instance.xml" \
-                /usr/local/opnsense/mvc/app/models/OPNsense/Xray/
-install -m 0644 "$PLUGIN_DIR/mvc/app/models/OPNsense/Xray/Instance.php" \
-                /usr/local/opnsense/mvc/app/models/OPNsense/Xray/
-install -m 0644 "$PLUGIN_DIR/mvc/app/models/OPNsense/Xray/Menu/Menu.xml" \
-                /usr/local/opnsense/mvc/app/models/OPNsense/Xray/Menu/
+# MVC: models, controllers, views (including subdirectories — partials и т.д.)
+install -d /usr/local/opnsense/mvc/app/models/OPNsense/Xray
+install_tree "$PLUGIN_DIR/mvc/app/models/OPNsense/Xray" \
+             "/usr/local/opnsense/mvc/app/models/OPNsense/Xray" 0644
 
-install -d /usr/local/opnsense/mvc/app/controllers/OPNsense/Xray/Api
-install -d /usr/local/opnsense/mvc/app/controllers/OPNsense/Xray/forms
-install -m 0644 "$PLUGIN_DIR/mvc/app/controllers/OPNsense/Xray/IndexController.php" \
-                /usr/local/opnsense/mvc/app/controllers/OPNsense/Xray/
-install -m 0644 "$PLUGIN_DIR/mvc/app/controllers/OPNsense/Xray/Api/GeneralController.php" \
-                /usr/local/opnsense/mvc/app/controllers/OPNsense/Xray/Api/
-install -m 0644 "$PLUGIN_DIR/mvc/app/controllers/OPNsense/Xray/Api/InstanceController.php" \
-                /usr/local/opnsense/mvc/app/controllers/OPNsense/Xray/Api/
-install -m 0644 "$PLUGIN_DIR/mvc/app/controllers/OPNsense/Xray/Api/ServiceController.php" \
-                /usr/local/opnsense/mvc/app/controllers/OPNsense/Xray/Api/
-install -m 0644 "$PLUGIN_DIR/mvc/app/controllers/OPNsense/Xray/Api/ImportController.php" \
-                /usr/local/opnsense/mvc/app/controllers/OPNsense/Xray/Api/
-install -m 0644 "$PLUGIN_DIR/mvc/app/controllers/OPNsense/Xray/forms/general.xml" \
-                /usr/local/opnsense/mvc/app/controllers/OPNsense/Xray/forms/
-install -m 0644 "$PLUGIN_DIR/mvc/app/controllers/OPNsense/Xray/forms/instance.xml" \
-                /usr/local/opnsense/mvc/app/controllers/OPNsense/Xray/forms/
+install -d /usr/local/opnsense/mvc/app/controllers/OPNsense/Xray
+install_tree "$PLUGIN_DIR/mvc/app/controllers/OPNsense/Xray" \
+             "/usr/local/opnsense/mvc/app/controllers/OPNsense/Xray" 0644
 
 install -d /usr/local/opnsense/mvc/app/views/OPNsense/Xray
-install -m 0644 "$PLUGIN_DIR/mvc/app/views/OPNsense/Xray/general.volt" \
-                /usr/local/opnsense/mvc/app/views/OPNsense/Xray/
+install_tree "$PLUGIN_DIR/mvc/app/views/OPNsense/Xray" \
+             "/usr/local/opnsense/mvc/app/views/OPNsense/Xray" 0644
 
-install -m 0644 "$PLUGIN_DIR/etc/inc/plugins.inc.d/xray.inc" \
-                /usr/local/etc/inc/plugins.inc.d/
+# System hooks
+install -d /usr/local/etc/inc/plugins.inc.d
+install_tree "$PLUGIN_DIR/etc/inc/plugins.inc.d" \
+             "/usr/local/etc/inc/plugins.inc.d" 0644
 
 install -d /usr/local/etc/rc.syshook.d/start
-install -m 0755 "$PLUGIN_DIR/etc/rc.syshook.d/start/50-xray" \
-                /usr/local/etc/rc.syshook.d/start/
+install_tree "$PLUGIN_DIR/etc/rc.syshook.d/start" \
+             "/usr/local/etc/rc.syshook.d/start" 0755
 
-# BUG-11: ротация /var/log/xray-core.log через newsyslog
-# Без этого лог растёт бесконечно (файл появился после BUG-7 fix).
-# Ротация: при превышении 600 KB, 3 архива, bzip2-сжатие.
 install -d /etc/newsyslog.conf.d
-install -m 0644 "$PLUGIN_DIR/etc/newsyslog.conf.d/xray.conf" \
-                /etc/newsyslog.conf.d/
+install_tree "$PLUGIN_DIR/etc/newsyslog.conf.d" \
+             "/etc/newsyslog.conf.d" 0644
 
+# Working directories for xray-core and tun2socks
 install -d -m 0750 /usr/local/etc/xray-core
 install -d -m 0750 /usr/local/tun2socks
 
