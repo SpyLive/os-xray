@@ -13,8 +13,13 @@ class InstanceController extends ApiMutableModelControllerBase
     {
         return $this->searchBase(
             'instance',
-            ['name', 'server_address', 'server_port', 'config_mode']
+            ['enabled', 'name', 'server_address', 'server_port', 'config_mode']
         );
+    }
+
+    public function toggleItemAction($uuid, $enabled = null)
+    {
+        return $this->toggleBase('instance', $uuid, $enabled);
     }
 
     public function getItemAction($uuid = null)

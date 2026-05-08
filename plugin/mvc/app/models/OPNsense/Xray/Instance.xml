@@ -8,6 +8,9 @@
     <version>3.0.0</version>
     <items>
         <instance type="ArrayField">
+            <enabled type="BooleanField">
+                <Default>1</Default>
+            </enabled>
             <!-- Имя инстанса для отображения в таблице GUI -->
             <name type="TextField">
                 <Default>default</Default>

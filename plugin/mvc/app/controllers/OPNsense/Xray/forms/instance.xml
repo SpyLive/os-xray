@@ -4,6 +4,12 @@
         <label>Instance</label>
     </field>
     <field>
+        <id>instance.enabled</id>
+        <label>Enabled</label>
+        <type>checkbox</type>
+        <help>Enable this instance. Disabled instances are skipped on start and reconfigure.</help>
+    </field>
+    <field>
         <id>instance.name</id>
         <label>Name</label>
         <type>text</type>

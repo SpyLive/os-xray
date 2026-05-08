@@ -56,4 +56,6 @@ exec(
 );
 
 echo implode('', $out) . "\n";
+
+// TODO return parsed result as now it done in ServiceController
 exit($rc);
