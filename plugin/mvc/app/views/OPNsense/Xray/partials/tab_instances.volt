@@ -72,11 +72,6 @@
                             data-type="string"
                             data-width="6em">{{ lang._('Port') }}</th>
 
-                        <th data-column-id="config_mode"
-                            data-type="string"
-                            data-sortable="false"
-                            data-width="8em">{{ lang._('Mode') }}</th>
-
                         <th data-column-id="inst_status"
                             data-formatter="instanceStatus"
                             data-sortable="false"

@@ -63,16 +63,9 @@ function xray_parse_instance($inst, bool $globalEnabled): array
     $loglevel = $levelMap[$rawLevel] ?? ($rawLevel ?: 'warning');
 
     return [
-        'enabled'         => $globalEnabled,
+        'enabled'         => $globalEnabled && (string)($inst->enabled ?? '1') === '1',
         'name'            => (string)($inst->name             ?? 'default'),
-        'server'          => (string)($inst->server_address   ?? ''),
-        'port'            => (int)(string)($inst->server_port ?? 443),
-        'vless_uuid'      => (string)($inst->vless_uuid        ?? ''),
-        'flow'            => (string)($inst->flow             ?? 'xtls-rprx-vision'),
-        'sni'             => (string)($inst->reality_sni      ?? ''),
-        'pubkey'          => (string)($inst->reality_pubkey   ?? ''),
-        'shortid'         => (string)($inst->reality_shortid  ?? ''),
-        'fingerprint'     => (string)($inst->reality_fingerprint ?? 'chrome'),
+        'outbound_config' => (string)($inst->outbound_config  ?? ''),
         'socks5_listen'   => (string)($inst->socks5_listen    ?? '127.0.0.1') ?: '127.0.0.1',
         'socks5_port'     => (int)(string)($inst->socks5_port ?? 10808) ?: 10808,
         'tun_iface'       => (string)($inst->tun_interface    ?? 'proxytun2socks0'),
@@ -80,8 +73,6 @@ function xray_parse_instance($inst, bool $globalEnabled): array
         'loglevel'        => $loglevel,
         'bypass_networks' => (string)($inst->bypass_networks  ?? '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16')
                             ?: '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16',
-        'config_mode'     => (string)($inst->config_mode      ?? 'wizard') ?: 'wizard',
-        'custom_config'   => (string)($inst->custom_config    ?? ''),
     ];
 }
 
@@ -132,65 +123,20 @@ function xray_get_config(string $inst_uuid = ''): array
     return reset($all);
 }
 
-// ─── Build xray config array ──────────────────────────────────────────────────
-function xray_build_config_array(array $c): array
+// ─── Build routing block from comma-separated CIDR string ────────────────────
+function xray_build_routing(string $bypassRaw): array
 {
-    $flow = ($c['flow'] === 'none' || $c['flow'] === '') ? '' : $c['flow'];
-
-    // P2-5/6: парсим bypass_networks из comma-separated строки
-    $bypassRaw  = $c['bypass_networks'] ?? '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16';
     $bypassNets = array_values(array_filter(array_map('trim', explode(',', $bypassRaw))));
     if (empty($bypassNets)) {
         $bypassNets = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
     }
-
     return [
-        'log'      => ['loglevel' => $c['loglevel'] ?: 'warning'],
-        'inbounds' => [[
-            'tag'      => 'socks-in',
-            'port'     => $c['socks5_port'],
-            'listen'   => $c['socks5_listen'],
-            'protocol' => 'socks',
-            'settings' => ['auth' => 'noauth', 'udp' => true, 'ip' => $c['socks5_listen']],
+        'domainStrategy' => 'IPIfNonMatch',
+        'rules' => [[
+            'type'        => 'field',
+            'ip'          => $bypassNets,
+            'outboundTag' => 'direct',
         ]],
-        'outbounds' => [
-            [
-                'tag'      => 'proxy',
-                'protocol' => 'vless',
-                'settings' => [
-                    'vnext' => [[
-                        'address' => $c['server'],
-                        'port'    => $c['port'],
-                        'users'   => [[
-                            'id'         => $c['vless_uuid'],
-                            'encryption' => 'none',
-                            'flow'       => $flow,
-                        ]],
-                    ]],
-                ],
-                'streamSettings' => [
-                    'network'         => 'tcp',
-                    'security'        => 'reality',
-                    'realitySettings' => [
-                        'serverName'  => $c['sni'],
-                        'fingerprint' => $c['fingerprint'],
-                        'show'        => false,
-                        'publicKey'   => $c['pubkey'],
-                        'shortId'     => $c['shortid'],
-                        'spiderX'     => '',
-                    ],
-                ],
-            ],
-            ['tag' => 'direct', 'protocol' => 'freedom'],
-        ],
-        'routing' => [
-            'domainStrategy' => 'IPIfNonMatch',
-            'rules' => [[
-                'type'        => 'field',
-                'ip'          => $bypassNets,
-                'outboundTag' => 'direct',
-            ]],
-        ],
     ];
 }
 
@@ -221,23 +167,30 @@ function xray_write_config(array $c): void
     $inst_uuid = $c['inst_uuid'];
     $confFile  = xray_conf_path($inst_uuid);
 
-    if (($c['config_mode'] ?? 'wizard') === 'custom') {
-        $raw = trim($c['custom_config'] ?? '');
-        if ($raw === '') {
-            echo "ERROR: custom_config is empty\n";
-            return;
-        }
-        $decoded = json_decode($raw, true);
-        if ($decoded === null) {
-            echo "ERROR: custom_config is not valid JSON\n";
-            return;
-        }
-        $json = json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        $json = xray_normalize_transport($json);
-    } else {
-        $cfg  = xray_build_config_array($c);
-        $json = json_encode($cfg, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $raw = trim($c['outbound_config'] ?? '');
+    if ($raw === '') {
+        echo "ERROR: outbound_config is empty\n";
+        return;
     }
+    $outbound = json_decode($raw, true);
+    if ($outbound === null) {
+        echo "ERROR: outbound_config is not valid JSON\n";
+        return;
+    }
+    $config = [
+        'log'      => ['loglevel' => $c['loglevel'] ?? 'warning'],
+        'inbounds' => [[
+            'tag'      => 'socks-in',
+            'port'     => (int)($c['socks5_port'] ?? 10808),
+            'listen'   => $c['socks5_listen'] ?? '127.0.0.1',
+            'protocol' => 'socks',
+            'settings' => ['auth' => 'noauth', 'udp' => true, 'ip' => $c['socks5_listen'] ?? '127.0.0.1'],
+        ]],
+        'outbounds' => [$outbound, ['tag' => 'direct', 'protocol' => 'freedom']],
+        'routing'   => xray_build_routing($c['bypass_networks'] ?? ''),
+    ];
+    $json = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $json = xray_normalize_transport($json);
 
     file_put_contents($confFile, $json);
     chmod($confFile, 0640);
@@ -695,25 +648,30 @@ switch ($action) {
         $tmpConf = $tmpBase . '.json';
         @unlink($tmpBase);
         try {
-            if (($c['config_mode'] ?? 'wizard') === 'custom') {
-                $raw = trim($c['custom_config'] ?? '');
-                if ($raw === '') {
-                    echo "ERROR: custom_config is empty\n";
-                    exit(1);
-                }
-                $decoded = json_decode($raw, true);
-                if ($decoded === null) {
-                    echo "ERROR: custom_config is not valid JSON\n";
-                    exit(1);
-                }
-                $json = json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-                $json = xray_normalize_transport($json);
-            } else {
-                $json = json_encode(
-                    xray_build_config_array($c),
-                    JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
-                );
+            $raw = trim($c['outbound_config'] ?? '');
+            if ($raw === '') {
+                echo "ERROR: outbound_config is empty\n";
+                exit(1);
             }
+            $outbound = json_decode($raw, true);
+            if ($outbound === null) {
+                echo "ERROR: outbound_config is not valid JSON\n";
+                exit(1);
+            }
+            $config = [
+                'log'      => ['loglevel' => $c['loglevel'] ?? 'warning'],
+                'inbounds' => [[
+                    'tag'      => 'socks-in',
+                    'port'     => (int)($c['socks5_port'] ?? 10808),
+                    'listen'   => $c['socks5_listen'] ?? '127.0.0.1',
+                    'protocol' => 'socks',
+                    'settings' => ['auth' => 'noauth', 'udp' => true, 'ip' => $c['socks5_listen'] ?? '127.0.0.1'],
+                ]],
+                'outbounds' => [$outbound, ['tag' => 'direct', 'protocol' => 'freedom']],
+                'routing'   => xray_build_routing($c['bypass_networks'] ?? ''),
+            ];
+            $json = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            $json = xray_normalize_transport($json);
             file_put_contents($tmpConf, $json);
             chmod($tmpConf, 0600);
             if (xray_validate_config($tmpConf)) {

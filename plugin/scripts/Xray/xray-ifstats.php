@@ -173,7 +173,9 @@ $xrayUptimeSecs = $instUuid !== '' ? proc_uptime(xray_pid_path($instUuid)) : nul
 $t2sUptimeSecs  = $instUuid !== '' ? proc_uptime(t2s_pid_path($instUuid))  : null;
 
 // ─── Ping RTT до VPN-сервера ─────────────────────────────────────────────────
-$serverAddr = (string)($inst->server_address ?? '');
+$outboundJson = (string)($inst->outbound_config ?? '');
+$outboundArr  = json_decode($outboundJson, true);
+$serverAddr   = $outboundArr['settings']['vnext'][0]['address'] ?? '';
 $pingRtt = 'N/A';
 if ($serverAddr !== '') {
     exec('/sbin/ping -c 3 -W 2 ' . escapeshellarg($serverAddr) . ' 2>/dev/null', $pingOut, $pingRc);

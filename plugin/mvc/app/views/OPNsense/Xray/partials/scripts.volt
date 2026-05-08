@@ -127,53 +127,6 @@
             $('.selectpicker').selectpicker('refresh');
         });
 
-        // ── Config Mode toggle (wizard ↔ custom) in dialog ─────────
-        function toggleConfigMode() {
-            var mode = $('#instance\\.config_mode').val();
-            var $wizardHeaders = $('#DialogInstance td[colspan="2"] b').filter(function () {
-                var t = $(this).text().trim();
-                return t === 'Server' || t === 'Reality Settings';
-            }).closest('tr');
-            var wizardFields = [
-                'instance.server_address', 'instance.server_port', 'instance.vless_uuid',
-                'instance.flow', 'instance.reality_sni', 'instance.reality_pubkey',
-                'instance.reality_shortid', 'instance.reality_fingerprint'
-            ];
-            var $customConfig = $('#DialogInstance [id="instance.custom_config"]').closest('tr');
-
-            if (mode === 'custom') {
-                $.each(wizardFields, function (_, fieldId) {
-                    $('#DialogInstance [id="' + fieldId + '"]').closest('tr').hide();
-                });
-                $wizardHeaders.hide();
-                $customConfig.show();
-            } else {
-                $.each(wizardFields, function (_, fieldId) {
-                    $('#DialogInstance [id="' + fieldId + '"]').closest('tr').show();
-                });
-                $wizardHeaders.show();
-                $customConfig.hide();
-            }
-        }
-
-        // Toggle on mode change
-        $(document).on('change', '#instance\\.config_mode', function () {
-            toggleConfigMode();
-        });
-
-        // Toggle when dialog opens — poll until mapDataToFormUI finishes loading data
-        $('#DialogInstance').on('shown.bs.modal', function () {
-            var attempts = 0;
-            var poller = setInterval(function () {
-                attempts++;
-                var mode = $('#instance\\.config_mode').val();
-                if (mode === 'wizard' || mode === 'custom' || attempts > 20) {
-                    clearInterval(poller);
-                    toggleConfigMode();
-                }
-            }, 100);
-        });
-
         // ── Apply (save general, then reconfigure) ──────────────────
         $("#reconfigureAct").SimpleActionButton({
             onPreAction: function () {
@@ -309,44 +262,10 @@
         // ── Import VLESS (inside DialogInstance) ──────────────────
         function applyImportToDialog(data) {
             var $dlg = $('#DialogInstance');
-            var $modeSelect = $dlg.find('#instance\\.config_mode');
-
-            // Always set server/port for table display regardless of mode
-            $dlg.find('[id="instance.server_address"]').val(data.host || '');
-            $dlg.find('[id="instance.server_port"]').val(data.port || 443);
-
-            if (data.config_mode === 'custom') {
-                $modeSelect.val('custom').trigger('change');
-                if ($.fn.selectpicker) { $modeSelect.selectpicker('refresh'); }
-                $dlg.find('[id="instance.custom_config"]').val(data.custom_config || '');
-            } else {
-                var map = {
-                    'instance.server_address':      data.host  || '',
-                    'instance.server_port':         data.port  || 443,
-                    'instance.vless_uuid':          data.vless_uuid || '',
-                    'instance.flow':                data.flow  || 'xtls-rprx-vision',
-                    'instance.reality_sni':         data.sni   || '',
-                    'instance.reality_pubkey':      data.pbk   || '',
-                    'instance.reality_shortid':     data.sid   || '',
-                    'instance.reality_fingerprint': data.fp    || 'chrome'
-                };
-                $.each(map, function (id, val) {
-                    var $el = $dlg.find('[id="' + id + '"]');
-                    if ($el.is('select')) {
-                        $el.val(val).trigger('change');
-                        if ($.fn.selectpicker) { $el.selectpicker('refresh'); }
-                    } else {
-                        $el.val(val);
-                    }
-                });
-                $modeSelect.val('wizard').trigger('change');
-                if ($.fn.selectpicker) { $modeSelect.selectpicker('refresh'); }
-            }
-            // Set name from link fragment if available
             if (data.name) {
                 $dlg.find('[id="instance.name"]').val(data.name);
             }
-            toggleConfigMode();
+            $dlg.find('[id="instance.outbound_config"]').val(data.outbound_config || '');
         }
 
         // Inject Import panel + Validate button into DialogInstance on first open
@@ -411,16 +330,11 @@
             $res.removeClass('text-success text-danger').text("{{ lang._('Parsing...') }}");
             var b64 = btoa(unescape(encodeURIComponent(link)));
 
-            // Send current SOCKS5 settings from form so custom config uses them
-            var $dlg = $('#DialogInstance');
-            var socksListen = $dlg.find('[id="instance.socks5_listen"]').val() || '127.0.0.1';
-            var socksPort = parseInt($dlg.find('[id="instance.socks5_port"]').val(), 10) || 10808;
-
             $.ajax({
                 url:         '/api/xray/import/parse',
                 type:        'POST',
                 contentType: 'application/json; charset=utf-8',
-                data:        JSON.stringify({link_b64: b64, socks5_listen: socksListen, socks5_port: socksPort}),
+                data:        JSON.stringify({link_b64: b64}),
                 dataType:    'json',
                 success: function (data) {
                     $btn.prop('disabled', false);
