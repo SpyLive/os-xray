@@ -45,32 +45,13 @@ function proc_uptime(string $pidfile): ?int
     if ($pid <= 0) {
         return null;
     }
-    // Проверяем что процесс жив
-    exec('/bin/kill -0 ' . $pid . ' 2>/dev/null', $o, $rc);
-    if ($rc !== 0) {
+    // etimes= returns elapsed seconds as a plain integer.
+    // Returns empty for non-existent PIDs (no kill -0 needed, avoids EPERM for root processes).
+    $raw = trim((string)shell_exec('ps -o etimes= -p ' . $pid));
+    if ($raw === '' || !ctype_digit($raw)) {
         return null;
     }
-    // FreeBSD: /proc/$pid/status не всегда смонтирован.
-    // Используем ps -o etime= для получения прошедшего времени (формат [[DD-]HH:]MM:SS).
-    $etime = trim((string)shell_exec('ps -o etime= -p ' . $pid . ' 2>/dev/null'));
-    if (empty($etime)) {
-        return null;
-    }
-    // Парсим etime: [[DD-]HH:]MM:SS → секунды
-    $parts  = explode(':', strrev($etime)); // обратный порядок: SS, MM, HH, DD-...
-    $secs   = (int)strrev($parts[0] ?? '0');
-    $mins   = (int)strrev($parts[1] ?? '0');
-    $hrs    = (int)strrev($parts[2] ?? '0');
-    $days   = 0;
-    if (isset($parts[3])) {
-        $dayPart = strrev($parts[3]);
-        $dashPos = strpos($dayPart, '-');
-        if ($dashPos !== false) {
-            $days = (int)substr($dayPart, 0, $dashPos);
-            $hrs  = (int)substr($dayPart, $dashPos + 1);
-        }
-    }
-    return $days * 86400 + $hrs * 3600 + $mins * 60 + $secs;
+    return (int)$raw;
 }
 
 function format_uptime(?int $secs): string
@@ -145,7 +126,8 @@ if ($ifRc === 0) {
         // Ищем строку <Link> — только в ней реальные байты/пакеты.
         // FreeBSD формат с Idrop: Name Mtu Network Address Ipkts Ierrs Idrop Ibytes Opkts Oerrs Obytes Coll
         //                               [0]  [1]  [2]     [3]     [4]   [5]   [6]   [7]    [8]   [9]   [10]  [11]
-        if ($parts[0] === $tunIface && isset($parts[2]) && strpos($parts[2], '<Link') === 0) {
+        // Name column may be truncated for long names; -I already filters to this iface
+        if (isset($parts[2]) && strpos($parts[2], '<Link') === 0) {
             // Находим позицию Ipkts по первом целому числу после Network-поля.
             // Address может совпадать с именем интерфейса и содержать пробелы (разные длины имен) —
             // ищем позицию динамически: первое целое число > 0 после Network.
@@ -188,6 +170,17 @@ if ($serverAddr !== '') {
     }
 }
 
+function format_bytes(int $bytes): string
+{
+    if ($bytes <= 0) {
+        return '0 B';
+    }
+    $units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    $i = (int)floor(log($bytes, 1024));
+    $i = min($i, count($units) - 1);
+    return round($bytes / (1024 ** $i), 1) . ' ' . $units[$i];
+}
+
 // ─── Сборка результата ────────────────────────────────────────────────────────
 $result = [
     'tun_interface' => $tunIface,
@@ -207,16 +200,5 @@ $result = [
     'server_address'        => $serverAddr,
     'ping_rtt'              => $pingRtt,
 ];
-
-function format_bytes(int $bytes): string
-{
-    if ($bytes <= 0) {
-        return '0 B';
-    }
-    $units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
-    $i = (int)floor(log($bytes, 1024));
-    $i = min($i, count($units) - 1);
-    return round($bytes / (1024 ** $i), 1) . ' ' . $units[$i];
-}
 
 echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";

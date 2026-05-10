@@ -88,7 +88,7 @@
 
         // After grid loads/reloads data, fetch and overlay status
         $('#grid-instances').on('loaded.rs.jquery.bootgrid', function () {
-            updateStatus();
+            refreshInstancesStatus();
             // TODO: populate #diagInstanceSelect and #logInstanceSelect from instance list
         });
 
@@ -117,7 +117,7 @@
             var url = '/api/xray/service/' + action + (uuid ? '/' + encodeURIComponent(uuid) : '');
             $.ajax({
                 url: url, type: 'POST', dataType: 'json',
-                success: function () { setTimeout(updateStatus, 1500); }
+                success: function () { setTimeout(refreshInstancesStatus, 1500); }
             });
         }
 
@@ -139,7 +139,7 @@
         });
 
         // ── Status badges + per-instance status ───────────────────
-        function updateStatus() {
+        function refreshInstancesStatus() {
             ajaxGet("/api/xray/service/statusall", {}, function (data) {
                 if (data.error) return;
                 instanceStatusCache = data;
@@ -169,8 +169,8 @@
                 $('#btnRestartAll').prop('disabled', !running);
             });
         }
-        updateStatus();
-        setInterval(updateStatus, 5000);
+        refreshInstancesStatus();
+        setInterval(refreshInstancesStatus, 5000);
 
         // ── Start / Stop / Restart ──────────────────────────────────
         function serviceAction(action, confirmMsg, callback) {
@@ -195,7 +195,7 @@
                         alert('{{ lang._("Action failed:") }} ' + (data.message || 'unknown error'));
                     }
                     setTimeout(function () {
-                        updateStatus();
+                        refreshInstancesStatus();
                         $btns.prop('disabled', false);
                         if (callback) callback();
                     }, 1500);
@@ -409,17 +409,14 @@
                     ? '<span class="label label-success">running</span>'
                     : '<span class="label label-danger">' + escAttr(data.tun_status || 'down') + '</span>';
 
-                // TODO: audit xray-ifstats backend \u2014 tun_interface, tun_ip, mtu, pkts_in/out not returned
                 $('#diag_tun_iface').text(data.tun_interface  || '\u2014');
                 $('#diag_tun_status').html(statusHtml);
                 $('#diag_tun_ip').text(data.tun_ip           || '\u2014');
                 $('#diag_mtu').text(data.mtu > 0 ? data.mtu + ' bytes' : '\u2014');
-                // TODO: bytes_in_hr/bytes_out_hr not human-readable \u2014 convert raw bytes to MB/GB in backend or here
                 $('#diag_bytes_in').text(data.bytes_in_hr    || '\u2014');
                 $('#diag_bytes_out').text(data.bytes_out_hr  || '\u2014');
                 $('#diag_pkts_in').text(data.pkts_in != null ? data.pkts_in.toLocaleString() : '\u2014');
                 $('#diag_pkts_out').text(data.pkts_out != null ? data.pkts_out.toLocaleString() : '\u2014');
-                // TODO: xray_uptime, tun2socks_uptime, ping_rtt not returned by ifstats \u2014 fix backend script
                 $('#diag_xray_uptime').text(data.xray_uptime || '\u2014');
                 $('#diag_t2s_uptime').text(data.tun2socks_uptime || '\u2014');
                 $('#diag_ping_rtt').text(data.ping_rtt || 'N/A');

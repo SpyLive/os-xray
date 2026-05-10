@@ -30,11 +30,6 @@ class InstanceController extends ApiMutableModelControllerBase
         return $this->toggleBase('instance', $uuid, $enabled);
     }
 
-    public function toggleItemAction($uuid, $enabled = null)
-    {
-        return $this->toggleBase('instance', $uuid, $enabled);
-    }
-
     public function getItemAction($uuid = null)
     {
         return $this->getBase('instance', 'instance', $uuid);
