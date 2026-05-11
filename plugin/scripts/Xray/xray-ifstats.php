@@ -31,8 +31,6 @@ if ($ins) {
     }
 }
 
-// Финальный UUID для PID-путей
-$instUuid = $inst ? (string)$inst['uuid'] : $instUuid;
 $tunIface = (string)($inst->tun_interface ?? 'proxytun2socks0');
 
 // ─── Uptime процесса по PID-файлу ────────────────────────────────────────────

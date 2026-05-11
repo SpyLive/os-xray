@@ -89,7 +89,7 @@
         // After grid loads/reloads data, fetch and overlay status
         $('#grid-instances').on('loaded.rs.jquery.bootgrid', function () {
             refreshInstancesStatus();
-            // TODO: populate #diagInstanceSelect and #logInstanceSelect from instance list
+            populateInstanceSelects();
         });
 
         // Per-instance start / stop / test (row button handlers)
@@ -393,12 +393,33 @@
         });
 
         // ── Diagnostics ─────────────────────────────────────────────
-        // TODO: wire #diagInstanceSelect change → reload; populate options from instance list
+        function populateInstanceSelects() {
+            $.ajax({
+                url: '/api/xray/instance/searchItem',
+                type: 'POST',
+                dataType: 'json',
+                data: {rowCount: -1, current: 1, searchPhrase: ''},
+                success: function (data) {
+                    var rows = (data && data.rows) ? data.rows : [];
+                    var $diagSel = $('#diagInstanceSelect');
+                    var savedDiag = $diagSel.val();
+                    $diagSel.empty();
+                    $.each(rows, function (_, row) {
+                        $diagSel.append($('<option></option>').val(row.uuid).text(row.name || row.uuid));
+                    });
+                    if (savedDiag && $diagSel.find('option[value="' + savedDiag + '"]').length) {
+                        $diagSel.val(savedDiag);
+                    }
+                }
+            });
+        }
+
         function loadDiagnostics() {
-            // TODO: read #diagInstanceSelect val, append /{uuid} to URL when set
+            var uuid = $('#diagInstanceSelect').val();
+            var url = '/api/xray/service/diagnostics' + (uuid ? '/' + encodeURIComponent(uuid) : '');
             $('#btnDiagRefresh').prop('disabled', true);
             $('#diagError').hide();
-            ajaxGet('/api/xray/service/diagnostics', {}, function (data) {
+            ajaxGet(url, {}, function (data) {
                 $('#btnDiagRefresh').prop('disabled', false);
                 if (data.error) {
                     $('#diagError').text(data.error).show();
@@ -435,6 +456,9 @@
             }
         });
         $('#btnDiagRefresh').click(function () {
+            loadDiagnostics();
+        });
+        $('#diagInstanceSelect').on('change', function () {
             loadDiagnostics();
         });
 

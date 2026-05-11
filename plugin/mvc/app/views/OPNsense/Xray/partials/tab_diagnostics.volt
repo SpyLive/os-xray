@@ -8,13 +8,11 @@
                         display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
 
                 {# Instance selector #}
-                {# TODO: populate from instance list; wire change → loadDiagnostics() with selected UUID #}
                 <div class="input-group input-group-sm" style="max-width: 260px;">
                     <span class="input-group-addon">
                         <i class="fa fa-server fa-fw"></i>
                     </span>
                     <select id="diagInstanceSelect" class="form-control">
-                        <option value="">{{ lang._('— all instances —') }}</option>
                     </select>
                 </div>
 
