@@ -42,7 +42,7 @@ function xray_configure_do(bool $verbose = false): void
 
     foreach ($instances->instance as $inst) {
         $inst_uuid = (string)$inst['uuid'];
-        if ($inst_uuid === '') {
+        if ($inst_uuid === '' || (string)($inst->enabled ?? '1') !== '1') {
             continue;
         }
 
@@ -158,7 +158,7 @@ function xray_services()
     if ($instances) {
         foreach ($instances->instance as $inst) {
             $inst_uuid = (string)$inst['uuid'];
-            if ($inst_uuid === '') {
+            if ($inst_uuid === '' || (string)($inst->enabled ?? '1') !== '1') {
                 continue;
             }
             $name       = (string)($inst->name ?? 'default');
