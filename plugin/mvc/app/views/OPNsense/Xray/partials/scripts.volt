@@ -402,13 +402,20 @@
                 success: function (data) {
                     var rows = (data && data.rows) ? data.rows : [];
                     var $diagSel = $('#diagInstanceSelect');
+                    var $logSel = $('#logInstanceSelect');
                     var savedDiag = $diagSel.val();
+                    var savedLog = $logSel.val();
                     $diagSel.empty();
+                    $logSel.empty();
                     $.each(rows, function (_, row) {
                         $diagSel.append($('<option></option>').val(row.uuid).text(row.name || row.uuid));
+                        $logSel.append($('<option></option>').val(row.uuid).text(row.name || row.uuid));
                     });
                     if (savedDiag && $diagSel.find('option[value="' + savedDiag + '"]').length) {
                         $diagSel.val(savedDiag);
+                    }
+                    if (savedLog && $logSel.find('option[value="' + savedLog + '"]').length) {
+                        $logSel.val(savedLog);
                     }
                 }
             });
@@ -461,14 +468,17 @@
         $('#diagInstanceSelect').on('change', function () {
             loadDiagnostics();
         });
+        $('#logInstanceSelect').on('change', function () {
+            loadLog("/api/xray/service/xraylog", 'logCoreContent', 'logCoreRefreshBtn');
+        });
 
-        // TODO: wire #logInstanceSelect change → reload active log tab; populate options from instance list
         // ── Logs ────────────────────────────────────────────────────
         function loadLog(apiEndpoint, preId, btnId) {
-            // TODO: add UUID parameter for per-instance log using #logInstanceSelect
+            var uuid = $('#logInstanceSelect').val();
+            var apiEndpointWithUuid = apiEndpoint + (uuid ? '/' + encodeURIComponent(uuid) : '');
             $('#' + btnId).prop('disabled', true);
             $('#' + preId).text("{{ lang._('Loading...') }}");
-            $.post(apiEndpoint, null, function (data) {
+            $.post(apiEndpointWithUuid, null, function (data) {
                 var text = (data && data.log) || "{{ lang._('Log is empty.') }}";
                 $('#' + preId).text(text);
                 $('#' + btnId).prop('disabled', false);

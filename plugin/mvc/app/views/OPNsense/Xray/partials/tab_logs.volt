@@ -7,19 +7,6 @@
             <div style="padding: 8px 15px; border-bottom: 1px solid #ddd;
                         display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
 
-                {# Instance selector #}
-                {# TODO: populate from instance list; wire change → reload active log tab with selected UUID #}
-                <div class="input-group input-group-sm" style="max-width: 260px;">
-                    <span class="input-group-addon">
-                        <i class="fa fa-server fa-fw"></i>
-                    </span>
-                    <select id="logInstanceSelect" class="form-control">
-                        <option value="">{{ lang._('— all instances —') }}</option>
-                    </select>
-                </div>
-
-                <div style="width: 1px; height: 22px; background: #ddd;"></div>
-
                 {# Log type sub-tabs #}
                 <ul class="nav nav-pills nav-sm" id="logSubTabs" style="margin: 0;">
                     <li class="active">
@@ -64,6 +51,13 @@
                         <button id="logCoreRefreshBtn" class="btn btn-sm btn-default">
                             <i class="fa fa-refresh fa-fw"></i> {{ lang._('Refresh') }}
                         </button>
+                        <div class="input-group input-group-sm" style="max-width: 220px;">
+                            <span class="input-group-addon">
+                                <i class="fa fa-server fa-fw"></i>
+                            </span>
+                            <select id="logInstanceSelect" class="form-control">
+                            </select>
+                        </div>
                         <span class="text-muted" style="font-size: 12px;">
                             {{ lang._('/var/log/xray-core-{uuid}.log — last 200 lines') }}
                         </span>
