@@ -51,7 +51,7 @@
                         <button id="logCoreRefreshBtn" class="btn btn-sm btn-default">
                             <i class="fa fa-refresh fa-fw"></i> {{ lang._('Refresh') }}
                         </button>
-                        <div class="input-group input-group-sm" style="max-width: 220px;">
+                        <div class="input-group input-group-sm" style="min-width: 200px; width: auto;">
                             <span class="input-group-addon">
                                 <i class="fa fa-server fa-fw"></i>
                             </span>

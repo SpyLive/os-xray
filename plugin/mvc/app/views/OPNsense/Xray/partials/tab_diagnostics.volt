@@ -8,7 +8,7 @@
                         display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
 
                 {# Instance selector #}
-                <div class="input-group input-group-sm" style="max-width: 260px;">
+                <div class="input-group input-group-sm" style="min-width: 200px; width: auto;">
                     <span class="input-group-addon">
                         <i class="fa fa-server fa-fw"></i>
                     </span>
