@@ -8,7 +8,7 @@
 [![OPNsense](https://img.shields.io/badge/OPNsense-25.x%20%2F%2026.x-blue)](https://opnsense.org)
 [![FreeBSD](https://img.shields.io/badge/FreeBSD-14.x%20amd64-red)](https://freebsd.org)
 
-**Xray-core VPN plugin for OPNsense** — v3.0.0
+**Xray-core VPN plugin for OPNsense** — v3.0.1
 
 Xray-core + tun2socks — native VPN client for OPNsense with selective routing support. VLESS+Reality via wizard or custom config.json (any protocol/transport). Bypasses DPI blocking by disguising traffic as legitimate TLS.
 
@@ -850,6 +850,8 @@ Full changelog in [CHANGELOG.md](CHANGELOG.md).
 
 | Version | Changes |
 |---------|---------|
+| 3.0.1  | Fix multiple multi-instance bugs |
+| 3.0.0  | Multi-instance (ArrayField), per-instance state in table, Import VLESS and Validate Config inside dialog, custom config use SOCKS5 from the form, rename uuid→vless_uuid, migrate into install.sh |
 | 2.0.0   | Custom Config (wizard/custom), VLESS import with auto-generated config.json for any transport, xhttp↔splithttp normalization, xray-core version check on install |
 | 1.10.0  | Version check on install, `configctl xray version`, API version endpoint, Outbound NAT in README |
 | 1.9.3   | P1 bugfixes (implode, socks5_port, validate tempfile, dedup), Bypass Networks, Copy Debug Info, Ping RTT, Diagnostics auto-refresh |

@@ -8,7 +8,7 @@
 [![OPNsense](https://img.shields.io/badge/OPNsense-25.x%20%2F%2026.x-blue)](https://opnsense.org)
 [![FreeBSD](https://img.shields.io/badge/FreeBSD-14.x%20amd64-red)](https://freebsd.org)
 
-**Xray-core VPN plugin for OPNsense** — v3.0.0
+**Xray-core VPN plugin for OPNsense** — v3.0.1
 
 Xray-core + tun2socks — нативный VPN-клиент для OPNsense с поддержкой селективной маршрутизации. VLESS+Reality через визард или произвольный config.json (любой протокол/транспорт). Обходит DPI-блокировки за счёт маскировки трафика под легитимный TLS.
 
@@ -850,6 +850,7 @@ install -m 0755 /tmp/tun2socks-freebsd-amd64 /usr/local/tun2socks/tun2socks
 
 | Версия | Что изменилось |
 |--------|---------------|
+| 3.0.1  | Исправления ошибок мульти-инстанцов |
 | 3.0.0  | Мульти-инстанс (ArrayField), per-instance статус в таблице, Import VLESS и Validate Config внутри диалога, custom config использует SOCKS5 из формы, переименование uuid→vless_uuid, миграция в install.sh |
 | 2.0.0  | Custom Config (wizard/custom), Import VLESS с авто-генерацией config.json для любого транспорта, нормализация xhttp↔splithttp, проверка версии xray-core при установке |
 | 1.10.0 | Проверка версии при установке, `configctl xray version`, API version endpoint, Outbound NAT в README |
