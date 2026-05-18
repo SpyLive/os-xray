@@ -4,6 +4,12 @@
         <label>Instance</label>
     </field>
     <field>
+        <id>instance.enabled</id>
+        <label>Enabled</label>
+        <type>checkbox</type>
+        <help>Enable this instance. Disabled instances are skipped on start and reconfigure.</help>
+    </field>
+    <field>
         <id>instance.name</id>
         <label>Name</label>
         <type>text</type>
@@ -11,84 +17,11 @@
         <hint>e.g. default, work, streaming</hint>
     </field>
     <field>
-        <id>instance.config_mode</id>
-        <label>Mode</label>
-        <type>dropdown</type>
-        <help>Wizard: configure VLESS+Reality via GUI fields. Custom: paste your own xray-core config.json (supports any protocol).</help>
-        <hint>Use Custom for VMess, Trojan, Shadowsocks, or advanced multi-outbound setups</hint>
-    </field>
-    <field>
-        <id>instance.custom_config</id>
-        <label>Custom Config JSON</label>
+        <id>instance.outbound_config</id>
+        <label>Outbound Config (JSON)</label>
         <type>textbox</type>
-        <help>Paste your full xray-core config.json here. This JSON will be written as-is. Make sure the SOCKS5 inbound port matches the "SOCKS5 Port" field below — tun2socks needs it.</help>
-        <hint>Full xray-core config.json (must be valid JSON)</hint>
-        <style>xray-custom-config</style>
-    </field>
-    <field>
-        <type>header</type>
-        <label>Server</label>
-    </field>
-    <field>
-        <id>instance.server_address</id>
-        <label>Server Address</label>
-        <type>text</type>
-        <help>IP address or hostname of the VLESS+Reality server</help>
-        <hint>e.g. 1.2.3.4 or vpn.example.com</hint>
-    </field>
-    <field>
-        <id>instance.server_port</id>
-        <label>Server Port</label>
-        <type>text</type>
-        <help>TCP port the server listens on</help>
-        <hint>Default: 443 (recommended for Reality)</hint>
-    </field>
-    <field>
-        <id>instance.vless_uuid</id>
-        <label>UUID</label>
-        <type>text</type>
-        <help>User UUID configured on the server</help>
-        <hint>Format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</hint>
-    </field>
-    <field>
-        <id>instance.flow</id>
-        <label>Flow</label>
-        <type>dropdown</type>
-        <help>XTLS flow control mode</help>
-        <hint>Use xtls-rprx-vision for VLESS+Reality (required for UDP performance)</hint>
-    </field>
-
-    <field>
-        <type>header</type>
-        <label>Reality Settings</label>
-    </field>
-    <field>
-        <id>instance.reality_sni</id>
-        <label>Server Name (SNI)</label>
-        <type>text</type>
-        <help>Domain used for TLS handshake camouflage</help>
-        <hint>Must match a domain the server is configured to impersonate, e.g. www.cloudflare.com</hint>
-    </field>
-    <field>
-        <id>instance.reality_pubkey</id>
-        <label>Public Key</label>
-        <type>text</type>
-        <help>Server x25519 public key for Reality handshake verification</help>
-        <hint>Base64url string, provided by the server admin. Without this key the handshake fails.</hint>
-    </field>
-    <field>
-        <id>instance.reality_shortid</id>
-        <label>Short ID</label>
-        <type>text</type>
-        <help>Optional hex string that helps the server route connections</help>
-        <hint>Leave empty if the server does not require it. Format: up to 16 hex chars (e.g. a1b2c3d4)</hint>
-    </field>
-    <field>
-        <id>instance.reality_fingerprint</id>
-        <label>Fingerprint</label>
-        <type>dropdown</type>
-        <help>TLS ClientHello fingerprint to impersonate</help>
-        <hint>chrome or firefox are safest choices. random picks one each connection.</hint>
+        <help>xray-core outbound object. Use "Import VLESS link" above to auto-fill, or paste/write the outbound JSON directly. The backend wraps it with SOCKS5 inbound and routing on save.</help>
+        <hint>{"tag":"proxy","protocol":"vless","settings":{...},"streamSettings":{...}}</hint>
     </field>
 
     <field>

@@ -8,71 +8,18 @@
     <version>3.0.0</version>
     <items>
         <instance type="ArrayField">
+            <enabled type="BooleanField">
+                <Default>1</Default>
+            </enabled>
             <!-- Имя инстанса для отображения в таблице GUI -->
             <name type="TextField">
                 <Default>default</Default>
                 <Required>N</Required>
             </name>
-            <!-- v1.0.5: config_mode — переключатель Wizard (VLESS+Reality GUI) / Custom (raw JSON) -->
-            <config_mode type="OptionField">
-                <Default>wizard</Default>
-                <OptionValues>
-                    <wizard>Wizard (VLESS+Reality)</wizard>
-                    <custom>Custom JSON</custom>
-                </OptionValues>
-            </config_mode>
-            <custom_config type="TextField">
+            <outbound_config type="TextField">
                 <Required>N</Required>
                 <Default></Default>
-            </custom_config>
-            <!-- v1.0.0: добавлена валидация UUID (Mask) и server_address (Mask) -->
-            <server_address type="TextField">
-                <Required>N</Required>
-                <Mask>/^[a-zA-Z0-9]([a-zA-Z0-9\-\.]{0,251}[a-zA-Z0-9])?$|^((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?)$/</Mask>
-                <ValidationMessage>Server address must be a valid hostname or IPv4 address (no spaces, no special characters)</ValidationMessage>
-                <Default></Default>
-            </server_address>
-            <server_port type="PortField">
-                <Default>443</Default>
-                <Required>Y</Required>
-            </server_port>
-            <!-- VLESS user UUID (не путать с UUID инстанса OPNsense ArrayField) -->
-            <vless_uuid type="TextField">
-                <Required>N</Required>
-                <Mask>/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/</Mask>
-                <ValidationMessage>UUID must be a valid UUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)</ValidationMessage>
-                <Default></Default>
-            </vless_uuid>
-            <flow type="OptionField">
-                <Default>xtls-rprx-vision</Default>
-                <OptionValues>
-                    <xtls-rprx-vision>xtls-rprx-vision</xtls-rprx-vision>
-                    <none>(none)</none>
-                </OptionValues>
-            </flow>
-            <reality_sni type="TextField">
-                <Default>www.cloudflare.com</Default>
-                <Required>N</Required>
-            </reality_sni>
-            <reality_pubkey type="TextField">
-                <Required>N</Required>
-                <ValidationMessage>Reality public key is required</ValidationMessage>
-                <Default></Default>
-            </reality_pubkey>
-            <reality_shortid type="TextField">
-                <Required>N</Required>
-                <Default></Default>
-            </reality_shortid>
-            <reality_fingerprint type="OptionField">
-                <Default>chrome</Default>
-                <OptionValues>
-                    <chrome>chrome</chrome>
-                    <firefox>firefox</firefox>
-                    <safari>safari</safari>
-                    <edge>edge</edge>
-                    <random>random</random>
-                </OptionValues>
-            </reality_fingerprint>
+            </outbound_config>
             <!-- v1.0.3: socks5_listen — настраиваемый IP для SOCKS5 inbound -->
             <socks5_listen type="TextField">
                 <Default>127.0.0.1</Default>

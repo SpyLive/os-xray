@@ -43,35 +43,27 @@ setup_instance() {
         _lock_tries=$((_lock_tries+1))
     done
 
-    # BUG-2 FIX: TUN_IFACE передаётся через env, не через shell interpolation
-    _INST_UUID="$_INST_UUID" TUN_IFACE=$(php -r '
+    # Read tun_interface and mtu in one PHP call;
+    # Note: SimpleXML elements are never null, so ?? is dead code — use string check.
+    _INST_INFO=$(_INST_UUID="$_INST_UUID" php -r '
         set_include_path("/usr/local/etc/inc" . PATH_SEPARATOR . get_include_path());
         require_once("config.inc");
-        $cfg = OPNsense\Core\Config::getInstance()->object();
+        $cfg  = OPNsense\Core\Config::getInstance()->object();
         $uuid = getenv("_INST_UUID");
         foreach ($cfg->OPNsense->xray->instances->instance as $inst) {
             if ((string)$inst["uuid"] === $uuid) {
-                echo (string)($inst->tun_interface ?? "proxytun2socks0");
+                $tun = (string)$inst->tun_interface;
+                $mtu = (string)$inst->mtu;
+                echo "TUN_IFACE=" . ($tun !== "" ? $tun : "proxytun2socks0") . "\n";
+                echo "MTU="       . ($mtu !== "" ? $mtu : "1500")            . "\n";
                 exit(0);
             }
         }
-        echo "proxytun2socks0";
-    ' 2>/dev/null)
+        echo "TUN_IFACE=proxytun2socks0\n";
+        echo "MTU=1500\n";
+    ' 2>>"$LOG")
 
-    _INST_UUID="$_INST_UUID" MTU=$(php -r '
-        set_include_path("/usr/local/etc/inc" . PATH_SEPARATOR . get_include_path());
-        require_once("config.inc");
-        $cfg = OPNsense\Core\Config::getInstance()->object();
-        $uuid = getenv("_INST_UUID");
-        foreach ($cfg->OPNsense->xray->instances->instance as $inst) {
-            if ((string)$inst["uuid"] === $uuid) {
-                echo (string)($inst->mtu ?? "1500");
-                exit(0);
-            }
-        }
-        echo "1500";
-    ' 2>/dev/null)
-
+    eval "$_INST_INFO"
     TUN_IFACE="${TUN_IFACE:-proxytun2socks0}"
     MTU="${MTU:-1500}"
 
@@ -93,7 +85,7 @@ setup_instance() {
     ifconfig "$TUN_IFACE" mtu "$MTU" up 2>&1
 
     # Назначаем IP из OPNsense interfaces (BUG-2 FIX: через env)
-    _TUN_IFACE="$TUN_IFACE" TUN_IP=$(php -r '
+    TUN_IP=$(_TUN_IFACE="$TUN_IFACE" php -r '
         set_include_path("/usr/local/etc/inc" . PATH_SEPARATOR . get_include_path());
         require_once("config.inc");
         $cfg = OPNsense\Core\Config::getInstance()->object();
@@ -127,8 +119,10 @@ else
         $instances = $cfg->OPNsense->xray->instances ?? null;
         if ($instances) {
             foreach ($instances->instance as $inst) {
-                $uuid = (string)$inst["uuid"];
-                if ($uuid !== "") echo $uuid . "\n";
+                $uuid    = (string)$inst["uuid"];
+                $enabled = (string)$inst->enabled;
+                if ($uuid !== "" && $enabled === "1")
+                    echo $uuid . "\n";
             }
         }
     ' 2>/dev/null)

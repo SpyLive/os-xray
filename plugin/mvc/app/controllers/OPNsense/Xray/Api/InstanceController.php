@@ -11,10 +11,23 @@ class InstanceController extends ApiMutableModelControllerBase
 
     public function searchItemAction()
     {
-        return $this->searchBase(
-            'instance',
-            ['name', 'server_address', 'server_port', 'config_mode']
-        );
+        $response = $this->searchBase('instance', ['enabled', 'name', 'outbound_config']);
+        if (!empty($response['rows'])) {
+            foreach ($response['rows'] as &$row) {
+                $ob    = json_decode($row['outbound_config'] ?? '', true);
+                $vnext = $ob['settings']['vnext'][0] ?? [];
+                $row['server_address'] = $vnext['address'] ?? '';
+                $row['server_port']    = isset($vnext['port']) ? (string)$vnext['port'] : '';
+                unset($row['outbound_config']);
+            }
+            unset($row);
+        }
+        return $response;
+    }
+
+    public function toggleItemAction($uuid, $enabled = null)
+    {
+        return $this->toggleBase('instance', $uuid, $enabled);
     }
 
     public function getItemAction($uuid = null)

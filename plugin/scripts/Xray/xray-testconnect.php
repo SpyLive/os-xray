@@ -13,10 +13,23 @@
 
 require_once('config.inc');
 
-$cfg  = OPNsense\Core\Config::getInstance()->object();
-$inst = $cfg->OPNsense->xray->instance ?? null;
+// UUID инстанса как первый аргумент (из actions_xray.conf %1)
+$instUuid = isset($argv[1]) ? preg_replace('/[^0-9a-fA-F\-]/', '', trim($argv[1])) : '';
 
-// Читаем адрес и порт из конфига
+$cfg = OPNsense\Core\Config::getInstance()->object();
+$ins = $cfg->OPNsense->xray->instances ?? null;
+
+$inst = null;
+if ($ins) {
+    foreach ($ins->instance as $candidate) {
+        if ($instUuid === '' || (string)$candidate['uuid'] === $instUuid) {
+            $inst = $candidate;
+            if ($instUuid !== '') break;
+        }
+    }
+}
+
+// Читаем адрес и порт из конфига найденного инстанса
 $listen = (string)($inst->socks5_listen ?? '127.0.0.1') ?: '127.0.0.1';
 $port   = (int)(string)($inst->socks5_port ?? 10808);
 
@@ -43,4 +56,6 @@ exec(
 );
 
 echo implode('', $out) . "\n";
+
+// TODO return parsed result as now it done in ServiceController
 exit($rc);

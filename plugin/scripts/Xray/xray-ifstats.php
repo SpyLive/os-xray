@@ -10,12 +10,27 @@
 
 require_once('config.inc');
 
-define('XRAY_PID', '/var/run/xray_core.pid');
-define('T2S_PID',  '/var/run/tun2socks.pid');
+// ─── Per-instance path helpers (mirrors xray-service-control.php) ────────────
+function xray_pid_path(string $uuid): string  { return "/var/run/xray_core_{$uuid}.pid"; }
+function t2s_pid_path(string $uuid): string   { return "/var/run/tun2socks_{$uuid}.pid"; }
 
 // ─── Читаем config ────────────────────────────────────────────────────────────
-$cfg  = OPNsense\Core\Config::getInstance()->object();
-$inst = $cfg->OPNsense->xray->instance ?? null;
+// Принимаем UUID инстанса как первый аргумент (передаётся из actions_xray.conf %1)
+$instUuid = isset($argv[1]) ? preg_replace('/[^0-9a-fA-F\-]/', '', trim($argv[1])) : '';
+
+$cfg = OPNsense\Core\Config::getInstance()->object();
+$ins = $cfg->OPNsense->xray->instances ?? null;
+
+$inst = null;
+if ($ins) {
+    foreach ($ins->instance as $candidate) {
+        if ($instUuid === '' || (string)$candidate['uuid'] === $instUuid) {
+            $inst = $candidate;
+            if ($instUuid !== '') break; // точное совпадение — берём его
+        }
+    }
+}
+
 $tunIface = (string)($inst->tun_interface ?? 'proxytun2socks0');
 
 // ─── Uptime процесса по PID-файлу ────────────────────────────────────────────
@@ -28,32 +43,13 @@ function proc_uptime(string $pidfile): ?int
     if ($pid <= 0) {
         return null;
     }
-    // Проверяем что процесс жив
-    exec('/bin/kill -0 ' . $pid . ' 2>/dev/null', $o, $rc);
-    if ($rc !== 0) {
+    // etimes= returns elapsed seconds as a plain integer.
+    // Returns empty for non-existent PIDs (no kill -0 needed, avoids EPERM for root processes).
+    $raw = trim((string)shell_exec('ps -o etimes= -p ' . $pid));
+    if ($raw === '' || !ctype_digit($raw)) {
         return null;
     }
-    // FreeBSD: /proc/$pid/status не всегда смонтирован.
-    // Используем ps -o etime= для получения прошедшего времени (формат [[DD-]HH:]MM:SS).
-    $etime = trim((string)shell_exec('ps -o etime= -p ' . $pid . ' 2>/dev/null'));
-    if (empty($etime)) {
-        return null;
-    }
-    // Парсим etime: [[DD-]HH:]MM:SS → секунды
-    $parts  = explode(':', strrev($etime)); // обратный порядок: SS, MM, HH, DD-...
-    $secs   = (int)strrev($parts[0] ?? '0');
-    $mins   = (int)strrev($parts[1] ?? '0');
-    $hrs    = (int)strrev($parts[2] ?? '0');
-    $days   = 0;
-    if (isset($parts[3])) {
-        $dayPart = strrev($parts[3]);
-        $dashPos = strpos($dayPart, '-');
-        if ($dashPos !== false) {
-            $days = (int)substr($dayPart, 0, $dashPos);
-            $hrs  = (int)substr($dayPart, $dashPos + 1);
-        }
-    }
-    return $days * 86400 + $hrs * 3600 + $mins * 60 + $secs;
+    return (int)$raw;
 }
 
 function format_uptime(?int $secs): string
@@ -128,7 +124,8 @@ if ($ifRc === 0) {
         // Ищем строку <Link> — только в ней реальные байты/пакеты.
         // FreeBSD формат с Idrop: Name Mtu Network Address Ipkts Ierrs Idrop Ibytes Opkts Oerrs Obytes Coll
         //                               [0]  [1]  [2]     [3]     [4]   [5]   [6]   [7]    [8]   [9]   [10]  [11]
-        if ($parts[0] === $tunIface && isset($parts[2]) && strpos($parts[2], '<Link') === 0) {
+        // Name column may be truncated for long names; -I already filters to this iface
+        if (isset($parts[2]) && strpos($parts[2], '<Link') === 0) {
             // Находим позицию Ipkts по первом целому числу после Network-поля.
             // Address может совпадать с именем интерфейса и содержать пробелы (разные длины имен) —
             // ищем позицию динамически: первое целое число > 0 после Network.
@@ -152,11 +149,13 @@ if ($ifRc === 0) {
 }
 
 // ─── Uptime процессов ─────────────────────────────────────────────────────────
-$xrayUptimeSecs = proc_uptime(XRAY_PID);
-$t2sUptimeSecs  = proc_uptime(T2S_PID);
+$xrayUptimeSecs = $instUuid !== '' ? proc_uptime(xray_pid_path($instUuid)) : null;
+$t2sUptimeSecs  = $instUuid !== '' ? proc_uptime(t2s_pid_path($instUuid))  : null;
 
-// ─── P2-9: Ping RTT до VPN-сервера ──────────────────────────────────────────
-$serverAddr = (string)($inst->server_address ?? '');
+// ─── Ping RTT до VPN-сервера ─────────────────────────────────────────────────
+$outboundJson = (string)($inst->outbound_config ?? '');
+$outboundArr  = json_decode($outboundJson, true);
+$serverAddr   = $outboundArr['settings']['vnext'][0]['address'] ?? '';
 $pingRtt = 'N/A';
 if ($serverAddr !== '') {
     exec('/sbin/ping -c 3 -W 2 ' . escapeshellarg($serverAddr) . ' 2>/dev/null', $pingOut, $pingRc);
@@ -167,6 +166,17 @@ if ($serverAddr !== '') {
             $pingRtt = $pm[1] . ' ms';
         }
     }
+}
+
+function format_bytes(int $bytes): string
+{
+    if ($bytes <= 0) {
+        return '0 B';
+    }
+    $units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    $i = (int)floor(log($bytes, 1024));
+    $i = min($i, count($units) - 1);
+    return round($bytes / (1024 ** $i), 1) . ' ' . $units[$i];
 }
 
 // ─── Сборка результата ────────────────────────────────────────────────────────
@@ -188,16 +198,5 @@ $result = [
     'server_address'        => $serverAddr,
     'ping_rtt'              => $pingRtt,
 ];
-
-function format_bytes(int $bytes): string
-{
-    if ($bytes <= 0) {
-        return '0 B';
-    }
-    $units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
-    $i = (int)floor(log($bytes, 1024));
-    $i = min($i, count($units) - 1);
-    return round($bytes / (1024 ** $i), 1) . ' ' . $units[$i];
-}
 
 echo json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
