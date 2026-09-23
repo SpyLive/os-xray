@@ -2,10 +2,10 @@
 <model>
     <mount>//OPNsense/xray/instances</mount>
     <description>Xray Instance Settings</description>
-    <!-- v3.0.0: ArrayField multi-instance + vless_uuid rename (breaking change от v2.x) -->
+    <!-- v3.1.0: OPNsense 26.7 / FreeBSD 15.1 compatibility stabilization -->
     <!-- Каждый инстанс получает уникальный UUID от OPNsense BaseModel. -->
     <!-- Миграция: install.sh конвертирует <instance> → <instances><instance uuid="...">, uuid → vless_uuid -->
-    <version>3.0.0</version>
+    <version>3.1.0</version>
     <items>
         <instance type="ArrayField">
             <enabled type="BooleanField">
