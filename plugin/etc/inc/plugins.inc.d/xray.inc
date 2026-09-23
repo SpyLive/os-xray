@@ -1,5 +1,13 @@
 <?php
 
+function xray_valid_instance_uuid_boot(string $uuid): bool
+{
+    return (bool)preg_match(
+        '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/D',
+        $uuid
+    );
+}
+
 function xray_enabled(): bool
 {
     $cfg = OPNsense\Core\Config::getInstance()->object();
@@ -42,7 +50,8 @@ function xray_configure_do(bool $verbose = false): void
 
     foreach ($instances->instance as $inst) {
         $inst_uuid = (string)$inst['uuid'];
-        if ($inst_uuid === '' || (string)($inst->enabled ?? '1') !== '1') {
+        if (!xray_valid_instance_uuid_boot($inst_uuid)
+            || (string)($inst->enabled ?? '1') !== '1') {
             continue;
         }
 
@@ -158,7 +167,8 @@ function xray_services()
     if ($instances) {
         foreach ($instances->instance as $inst) {
             $inst_uuid = (string)$inst['uuid'];
-            if ($inst_uuid === '' || (string)($inst->enabled ?? '1') !== '1') {
+            if (!xray_valid_instance_uuid_boot($inst_uuid)
+                || (string)($inst->enabled ?? '1') !== '1') {
                 continue;
             }
             $name       = (string)($inst->name ?? 'default');
