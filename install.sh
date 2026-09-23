@@ -18,12 +18,12 @@
 set -e
 set -u
 
-PLUGIN_VERSION="3.1.0"
+PLUGIN_VERSION="3.1.1"
 PLUGIN_DIR="$(dirname "$0")/plugin"
 VERSION_FILE="/usr/local/opnsense/mvc/app/models/OPNsense/Xray/version.txt"
 
 # Tested production matrix. Xray 26.9.9 is newer but upstream marks it prerelease;
-# 3x-ui 3.8.5 uses it. The firewall client defaults to the latest stable Xray.
+# 3x-ui 3.8.5 uses it. The firewall client defaults to the pinned/tested Xray release.
 XRAY_VERSION="26.3.27"
 XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-freebsd-64.zip"
 XRAY_SHA256="c0fcd6962fc8a382e14441370ddbdb6a56e7108c73e817938c626770ac4a1358"
@@ -780,12 +780,22 @@ if (!$x) { echo "SKIP"; exit(0); }
 $old = $x->instance ?? null;
 if (!$old) { echo "SKIP"; exit(0); }
 
-// Уже есть новая структура — не мигрируем
-if (isset($x->instances)) { echo "SKIP"; exit(0); }
+// Если новая ArrayField-структура уже содержит реальные инстансы — не мигрируем.
+// В production встречается промежуточное состояние:
+//   <instances></instances> + legacy <instance>...</instance>
+// Пустой контейнер НЕ должен блокировать миграцию.
+if (isset($x->instances)) {
+    $instances = $x->instances;
+    foreach ($instances->instance as $_existing) {
+        echo "SKIP";
+        exit(0);
+    }
+} else {
+    $instances = $x->addChild('instances');
+}
 
-// Копируем все поля из старого <instance> в новый <instances><instance uuid="...">
-$instances = $x->addChild('instances');
-$newInst   = $instances->addChild('instance');
+// Копируем legacy <instance> в существующий пустой или новый контейнер.
+$newInst = $instances->addChild('instance');
 
 // Генерируем UUID
 $instUuid = sprintf(
@@ -812,6 +822,14 @@ foreach ($fields as $f) {
         $newInst->addChild($f, htmlspecialchars($val, ENT_XML1 | ENT_QUOTES, 'UTF-8'));
     }
 }
+
+// Fail-safe for orphaned legacy configs: an absent/empty legacy enabled flag must
+// not resurrect an old VPN endpoint during upgrade. The user can explicitly
+// enable the migrated profile after reviewing it in the GUI.
+if (!isset($newInst->enabled)) {
+    $newInst->addChild('enabled', '0');
+}
+
 // v2.0.0: rename old <uuid> to <vless_uuid> (avoid ArrayField UUID conflict)
 $oldUuid = (string)($old->uuid ?? '');
 if ($oldUuid !== '') {
