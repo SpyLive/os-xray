@@ -23,7 +23,10 @@ T2S_BIN="/usr/local/tun2socks/tun2socks"
 INST_UUID="${1:-}"
 
 valid_inst_uuid() {
-    printf '%s\n' "$1" | grep -Eq '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$(php -r 'set_include_path("/usr/local/etc/inc" . PATH_SEPARATOR . get_include_path()); require_once("config.inc"); $cfg = OPNsense\Core\Config::getInstance()->object(); echo (string)($cfg->OPNsense->xray->general->enabled ?? "0");' 2>/dev/null)
+    printf '%s\n' "$1" | grep -Eq '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+}
+
+ENABLED=$(php -r 'set_include_path("/usr/local/etc/inc" . PATH_SEPARATOR . get_include_path()); require_once("config.inc"); $cfg = OPNsense\Core\Config::getInstance()->object(); echo (string)($cfg->OPNsense->xray->general->enabled ?? "0");' 2>/dev/null)
 
 echo "enabled=[$ENABLED] inst_uuid=[$INST_UUID]"
 
