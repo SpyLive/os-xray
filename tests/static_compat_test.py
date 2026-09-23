@@ -17,6 +17,7 @@ assert "' --config ' . escapeshellarg($t2sConf)" in boot
 assert "' -config ' . escapeshellarg($t2sConf)" not in boot
 assert "' -config '" not in all_php
 assert "run -test -c" in svc
+assert "tun_destroy($tunIface);" in svc
 assert "'address'    => $host" in imp
 assert "'vnext' => [[" not in imp
 assert "$settings['address']" in ctl and "$settings['vnext'][0]" in ctl
@@ -29,6 +30,8 @@ assert 'T2S_SHA256="3ebb747aa83ee3157330beb324bbeaf9a742db6a8d24b9bbc96a4125aaee
 assert 'EXIST_OUTBOUND=""' in installer
 assert "outbound_config" in installer
 assert "Legacy instances migrated to outbound_config" in installer
+assert "'enabled', 'name', 'outbound_config', 'config_mode', 'custom_config'" in installer
+assert 'Any old single-instance node needs migration' in installer
 assert "releases/latest/download" not in installer
 assert "<version>3.1.0</version>" in model
 print("static compatibility checks: OK")
