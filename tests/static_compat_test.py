@@ -33,5 +33,7 @@ assert "Legacy instances migrated to outbound_config" in installer
 assert "'enabled', 'name', 'outbound_config', 'config_mode', 'custom_config'" in installer
 assert 'Any old single-instance node needs migration' in installer
 assert "releases/latest/download" not in installer
+assert 'Gateway IP:            $MEMO_TUN_GW' in installer
+assert 'Gateway IP:            $MEMO_TUN_IP' not in installer
 assert "<version>3.1.0</version>" in model
 print("static compatibility checks: OK")
