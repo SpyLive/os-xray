@@ -31,6 +31,6 @@ Tested hashes:
 
 ## Deliberately deferred
 
-- Normal Stop/Restart does not start destroying assigned TUN interfaces. OPNsense interface/gateway/PF behavior must be validated first on FreeBSD 15.1.
+- FreeBSD tun2socks normally destroys its cloned TUN on graceful close; the plugin now also removes a stale TUN after stop. OPNsense assignment/gateway/PF behavior still requires live 26.7 validation.
 - The watchdog still distinguishes process liveness from path health. A later HA patch should add debounced end-to-end probes instead of restarting on a single transient HTTP failure.
 - FreeBSD 15.1 interface/statistics behavior must be verified on the target OPNsense host before changing gateway lifecycle semantics.
