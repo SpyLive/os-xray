@@ -39,22 +39,22 @@
         <id>instance.socks5_port</id>
         <label>SOCKS5 Port</label>
         <type>text</type>
-        <help>Local loopback port xray-core binds for SOCKS5 inbound</help>
-        <hint>Default: 10808. tun2socks connects here to forward TUN traffic. Must not be used by another process.</hint>
+        <help>Local address/port xray-core binds for the SOCKS5 inbound. Each enabled instance must use a non-conflicting listen/port pair.</help>
+        <hint>Default: 10808. For multiple enabled instances use a unique SOCKS5 port (e.g. 10808, 10809, ...).</hint>
     </field>
     <field>
         <id>instance.tun_interface</id>
         <label>TUN Interface</label>
         <type>text</type>
-        <help>Virtual network interface created by tun2socks</help>
-        <hint>Default: proxytun2socks0. Must match the name in Interfaces → Assignments.</hint>
+        <help>Virtual network interface created by tun2socks. Each enabled instance must use its own interface name.</help>
+        <hint>Default: proxytun2socks0. For multiple instances use unique names (e.g. proxytun2socks0, proxytun2socks1) and match Interfaces → Assignments.</hint>
     </field>
     <field>
         <id>instance.mtu</id>
         <label>MTU</label>
         <type>text</type>
         <help>Maximum Transmission Unit for the TUN interface</help>
-        <hint>Default: 1500. Reduce to 1380 if large packets (e.g. SSH, large downloads) fail or are slow.</hint>
+        <hint>Default: 1500. Change only after PMTU/fragmentation testing; do not use a fixed reduced value by default.</hint>
     </field>
     <field>
         <type>header</type>
