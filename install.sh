@@ -728,22 +728,21 @@ set_include_path("/usr/local/etc/inc" . PATH_SEPARATOR . get_include_path());
 require_once("config.inc");
 $cfg = OPNsense\Core\Config::getInstance()->object();
 
-// v2.0.0: check new ArrayField structure first
+// Any existing ArrayField instance belongs to the plugin and must be preserved.
+// Do not overwrite it from filesystem auto-detection merely because a new runtime
+// field (outbound_config) is still empty.
 $instances = $cfg->OPNsense->xray->instances ?? null;
 if ($instances) {
     foreach ($instances->instance as $inst) {
-        if ((string)($inst->outbound_config ?? "") !== "" ||
-            (string)($inst->server_address ?? "") !== "" ||
-            (string)($inst->vless_uuid ?? "") !== "") {
-            echo "new";
-            exit(0);
-        }
+        echo "new";
+        exit(0);
     }
 }
 
-// v1.x: check old single-instance structure (needs migration)
+// Any old single-instance node needs migration, including custom-config-only
+// installations that never populated wizard server fields.
 $inst = $cfg->OPNsense->xray->instance ?? null;
-if ($inst && ((string)($inst->server_address ?? "") !== "" || (string)($inst->vless_uuid ?? "") !== "" || (string)($inst->uuid ?? "") !== "")) {
+if ($inst) {
     echo "old";
     exit(0);
 }
@@ -763,10 +762,10 @@ else
     echo "[SKIP] No existing config to import."
 fi
 
-# ── Шаг 4.5: Миграция v1.x → v3.0.0 (single instance → ArrayField) ─────────
+# ── Шаг 4.5: Миграция legacy single instance → v3.1 ArrayField ──────────────
 if [ "$NEEDS_MIGRATION" = "1" ]; then
     echo ""
-    echo "==> Step 4.5: Migrating config.xml from v1.x to v3.0.0 (ArrayField)..."
+    echo "==> Step 4.5: Migrating legacy config.xml to v3.1 ArrayField..."
 
     _MIGRATE_OK=$(php << 'PHPEOF'
 <?php
@@ -801,7 +800,7 @@ $newInst->addAttribute('uuid', $instUuid);
 
 // Копируем дочерние элементы
 $fields = [
-    'name', 'config_mode', 'custom_config',
+    'enabled', 'name', 'outbound_config', 'config_mode', 'custom_config',
     'server_address', 'server_port', 'vless_uuid', 'flow',
     'reality_sni', 'reality_pubkey', 'reality_shortid', 'reality_fingerprint',
     'socks5_listen', 'socks5_port', 'tun_interface', 'mtu',
@@ -829,7 +828,7 @@ PHPEOF
     ) || true
 
     if [ "$_MIGRATE_OK" = "OK" ]; then
-        echo "[OK]  Migrated v1.x config to v3.0.0 ArrayField format."
+        echo "[OK]  Migrated legacy config to v3.1 ArrayField format."
     elif [ "$_MIGRATE_OK" = "SKIP" ]; then
         echo "[SKIP] Migration not needed."
     else
