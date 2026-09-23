@@ -5,7 +5,7 @@
 [![Release](https://img.shields.io/github/v/release/SpyLive/os-xray)](https://github.com/SpyLive/os-xray/releases)
 [![License](https://img.shields.io/github/license/SpyLive/os-xray)](https://github.com/SpyLive/os-xray/blob/develop/LICENSE)
 [![Downloads](https://img.shields.io/github/downloads/SpyLive/os-xray/total)](https://github.com/SpyLive/os-xray/releases)
-[![OPNsense](https://img.shields.io/badge/OPNsense-25.x%20%2F%2026.x-blue)](https://opnsense.org)
+[![OPNsense](https://img.shields.io/badge/OPNsense-26.7.x-blue)](https://opnsense.org)
 [![FreeBSD](https://img.shields.io/badge/FreeBSD-15.1%20amd64-red)](https://freebsd.org)
 
 **Xray-core VPN plugin for OPNsense** — SpyLive compatibility fork v3.1.0
@@ -138,7 +138,7 @@ Do not enable MSS clamping or reduce MTU by default. Measure PMTU/fragmentation 
 
 ---
 
-## Outbound NAT (required!)
+## Source NAT integration (verify on OPNsense 26.7)
 
 Without this, traffic through the tunnel won't be NATed and won't get past the VPN server.
 
