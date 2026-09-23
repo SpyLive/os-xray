@@ -1,0 +1,21 @@
+name: Compatibility checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shell syntax
+        run: sh -n install.sh
+      - name: PHP syntax
+        run: |
+          find plugin -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Fork compatibility assertions
+        run: python3 tests/static_compat_test.py
