@@ -1,3 +1,19 @@
+## [3.1.0] — 2026-09-23
+
+### SpyLive fork — OPNsense 26.7 / FreeBSD 15.1 stabilization
+
+- **[CRITICAL] tun2socks 2.7.0:** runtime now uses `--config` instead of the legacy `-config` flag after upstream moved to pflag.
+- **[Xray 26.x]** VLESS link import emits the current flat outbound format while GUI/diagnostics remain compatible with legacy `settings.vnext[]`.
+- **[Migration]** existing file configs preserve their complete proxy outbound in `outbound_config`; legacy v1/v2 wizard/custom instances are migrated before runtime.
+- **[REALITY]** import accepts the newer `password` field when supplied and keeps `pbk/publicKey` compatibility.
+- **[CLI]** config validation explicitly uses `xray run -test -c`.
+- **[Supply chain]** production default pins Xray 26.3.27 stable and tun2socks 2.7.0 with official SHA-256 verification and binary backup before replacement.
+- **[Pre-release policy]** Xray 26.9.9 is newer and used by 3x-ui 3.8.5, but remains upstream prerelease; it is documented as a compatibility candidate rather than silently installed on the firewall.
+- **[Platform]** target matrix updated to OPNsense 26.7.x / FreeBSD 15.1 amd64.
+- TUN destruction semantics and end-to-end watchdog changes remain deliberately deferred until integration testing on a real OPNsense 26.7 gateway.
+
+---
+
 # Changelog — os-xray
 
 All notable changes to this project will be documented in this file.
