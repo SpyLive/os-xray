@@ -387,7 +387,11 @@ function do_stop(string $inst_uuid, ?string $tunIface = null): void
     }
 
     // Останавливаем tun2socks первым — он держит TUN open.
+    // On FreeBSD tun2socks normally destroys the cloned TUN on graceful close,
+    // but explicit cleanup also handles stale interfaces after forced/crashed exits.
     proc_kill(t2s_pid_path($inst_uuid));
+    tun_destroy($tunIface);
+
     // Останавливаем xray-core
     proc_kill(xray_pid_path($inst_uuid));
 
