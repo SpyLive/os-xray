@@ -7,10 +7,15 @@ imp = (root / "plugin/mvc/app/controllers/OPNsense/Xray/Api/ImportController.php
 ctl = (root / "plugin/mvc/app/controllers/OPNsense/Xray/Api/InstanceController.php").read_text()
 stats = (root / "plugin/scripts/Xray/xray-ifstats.php").read_text()
 installer = (root / "install.sh").read_text()
+boot = (root / "plugin/etc/inc/plugins.inc.d/xray.inc").read_text()
 model = (root / "plugin/mvc/app/models/OPNsense/Xray/Instance.xml").read_text()
+all_php = "\n".join(p.read_text() for p in (root / "plugin").rglob("*.php"))
 
 assert "T2S_BIN, '--config " in svc
 assert "T2S_BIN, '-config " not in svc
+assert "' --config ' . escapeshellarg($t2sConf)" in boot
+assert "' -config ' . escapeshellarg($t2sConf)" not in boot
+assert "' -config '" not in all_php
 assert "run -test -c" in svc
 assert "'address'    => $host" in imp
 assert "'vnext' => [[" not in imp
