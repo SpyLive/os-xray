@@ -98,7 +98,7 @@ function xray_configure_do(bool $verbose = false): void
 
                     exec('/usr/sbin/daemon -p ' . escapeshellarg($t2sPid)
                         . ' ' . escapeshellarg($t2sBin)
-                        . ' -config ' . escapeshellarg($t2sConf)
+                        . ' --config ' . escapeshellarg($t2sConf)
                         . ' >> ' . $log . ' 2>&1 &');
 
                     // Ждём TUN до 5 секунд
