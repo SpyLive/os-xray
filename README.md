@@ -2,13 +2,13 @@
 
 # os-xray
 
-[![Release](https://img.shields.io/github/v/release/MrTheory/os-xray)](https://github.com/MrTheory/os-xray/releases)
-[![License](https://img.shields.io/github/license/MrTheory/os-xray)](https://github.com/MrTheory/os-xray/blob/main/LICENSE)
-[![Downloads](https://img.shields.io/github/downloads/MrTheory/os-xray/total)](https://github.com/MrTheory/os-xray/releases)
+[![Release](https://img.shields.io/github/v/release/SpyLive/os-xray)](https://github.com/SpyLive/os-xray/releases)
+[![License](https://img.shields.io/github/license/SpyLive/os-xray)](https://github.com/SpyLive/os-xray/blob/main/LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/SpyLive/os-xray/total)](https://github.com/SpyLive/os-xray/releases)
 [![OPNsense](https://img.shields.io/badge/OPNsense-25.x%20%2F%2026.x-blue)](https://opnsense.org)
-[![FreeBSD](https://img.shields.io/badge/FreeBSD-14.x%20amd64-red)](https://freebsd.org)
+[![FreeBSD](https://img.shields.io/badge/FreeBSD-15.1%20amd64-red)](https://freebsd.org)
 
-**Xray-core VPN plugin for OPNsense** — v3.0.1
+**Xray-core VPN plugin for OPNsense** — SpyLive compatibility fork v3.1.0
 
 Xray-core + tun2socks — native VPN client for OPNsense with selective routing support. VLESS+Reality via wizard or custom config.json (any protocol/transport). Bypasses DPI blocking by disguising traffic as legitimate TLS.
 
@@ -56,12 +56,14 @@ Firewall Rules (selective routing)
 
 | Component  | Version                 |
 |------------|-------------------------|
-| OPNsense   | 25.x / 26.x            |
-| FreeBSD    | 14.x amd64             |
-| xray-core  | 24.x+ (recommended)    |
-| tun2socks  | Any recent version     |
+| OPNsense   | 26.7.x (tested target)   |
+| FreeBSD    | 15.1 amd64              |
+| xray-core  | 26.3.27 stable (pinned); 26.9.9 prerelease compatible candidate |
+| tun2socks  | 2.7.0 (tested/pinned)    |
 
 ---
+
+> **Version policy:** upstream GitHub currently marks Xray v26.3.27 as the latest stable release. Xray v26.9.9 is newer but marked prerelease and is bundled by 3x-ui v3.8.5. This firewall fork pins v26.3.27 by default until v26.9.9 completes OPNsense 26.7 integration testing.
 
 ## Installation
 
@@ -69,7 +71,7 @@ Firewall Rules (selective routing)
 
 ```sh
 cd /tmp
-git clone https://github.com/MrTheory/os-xray.git
+git clone https://github.com/SpyLive/os-xray.git
 cd os-xray
 sh install.sh
 ```
@@ -77,7 +79,7 @@ sh install.sh
 **Option 2 — via archive**
 
 ```sh
-fetch -o /tmp/os-xray-v5.tar https://raw.githubusercontent.com/MrTheory/os-xray/refs/heads/main/os-xray-v5.tar
+fetch -o /tmp/os-xray-v5.tar https://raw.githubusercontent.com/SpyLive/os-xray/refs/heads/main/os-xray-v5.tar
 cd /tmp && tar xf os-xray-v5.tar && cd os-xray-v5
 sh install.sh
 ```
