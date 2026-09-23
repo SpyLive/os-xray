@@ -5,7 +5,7 @@
     <!-- v3.1.0: OPNsense 26.7 / FreeBSD 15.1 compatibility stabilization -->
     <!-- Каждый инстанс получает уникальный UUID от OPNsense BaseModel. -->
     <!-- Миграция: install.sh конвертирует <instance> → <instances><instance uuid="...">, uuid → vless_uuid -->
-    <version>3.1.0</version>
+    <version>3.1.1</version>
     <items>
         <instance type="ArrayField">
             <enabled type="BooleanField">
