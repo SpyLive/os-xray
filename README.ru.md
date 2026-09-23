@@ -3,14 +3,14 @@
 # os-xray
 
 [![Release](https://img.shields.io/github/v/release/SpyLive/os-xray)](https://github.com/SpyLive/os-xray/releases)
-[![License](https://img.shields.io/github/license/SpyLive/os-xray)](https://github.com/SpyLive/os-xray/blob/main/LICENSE)
+[![License](https://img.shields.io/github/license/SpyLive/os-xray)](https://github.com/SpyLive/os-xray/blob/develop/LICENSE)
 [![Downloads](https://img.shields.io/github/downloads/SpyLive/os-xray/total)](https://github.com/SpyLive/os-xray/releases)
 [![OPNsense](https://img.shields.io/badge/OPNsense-25.x%20%2F%2026.x-blue)](https://opnsense.org)
 [![FreeBSD](https://img.shields.io/badge/FreeBSD-15.1%20amd64-red)](https://freebsd.org)
 
 **Xray-core VPN plugin for OPNsense** — форк совместимости SpyLive v3.1.0
 
-Xray-core + tun2socks — нативный VPN-клиент для OPNsense с поддержкой селективной маршрутизации. VLESS+Reality через визард или произвольный config.json (любой протокол/транспорт). Обходит DPI-блокировки за счёт маскировки трафика под легитимный TLS.
+Xray-core + tun2socks — нативный VPN-клиент для OPNsense с поддержкой селективной маршрутизации. Интеграция Xray outbound + tun2socks для policy routing в OPNsense. VLESS-ссылку можно импортировать в JSON-объект outbound или отредактировать outbound вручную.
 
 ---
 
@@ -18,9 +18,8 @@ Xray-core + tun2socks — нативный VPN-клиент для OPNsense с �
 
 - **Мульти-инстанс** — несколько VPN-подключений одновременно, каждое с отдельным конфигом, портом и TUN-интерфейсом
 - **Per-instance статус** — таблица инстансов показывает статус xray-core и tun2socks для каждого подключения (обновление каждые 5 секунд)
-- **Custom Config** — два режима: Wizard (VLESS+Reality через GUI-поля) или Custom (произвольный config.json для любого протокола и транспорта)
-- **Импорт VLESS-ссылки** прямо в диалоге — кнопка Import внутри окна создания/редактирования инстанса; автоматически определяет wizard или custom режим; для xhttp, ws, grpc, h2, kcp генерирует полный config.json с учётом настроек SOCKS5
-- Полная поддержка параметров VLESS+Reality (UUID, flow, SNI, PublicKey, ShortID, Fingerprint)
+- **Импорт VLESS-ссылки** прямо в диалоге — преобразует ссылку в Xray outbound object, включая transport streamSettings (xhttp, ws, grpc, h2, kcp, если они присутствуют); backend сам добавляет SOCKS inbound и routing
+- Импорт VLESS+REALITY использует актуальный flat-синтаксис Xray 26.x и сохраняет чтение legacy vnext; REALITY совместим с password/publicKey
 - Управление туннелем через GUI: **VPN → Xray**
 - При установке автоматически определяет и импортирует существующий конфиг xray-core и tun2socks
 - Совместимость с селективной маршрутизацией OPNsense (Firewall Aliases + Rules + Gateway)
@@ -78,16 +77,16 @@ sh install.sh
 **Вариант 2 — через архив**
 
 ```sh
-fetch -o /tmp/os-xray-v5.tar https://raw.githubusercontent.com/SpyLive/os-xray/refs/heads/main/os-xray-v5.tar
-cd /tmp && tar xf os-xray-v5.tar && cd os-xray-v5
+fetch -o /tmp/os-xray-v5.tar https://github.com/SpyLive/os-xray/archive/refs/heads/develop.tar.gz
+cd /tmp && tar xzf os-xray-v5.tar && cd os-xray-develop
 sh install.sh
 ```
 
 Установщик автоматически:
 
 - Покажет текущую и новую версию плагина и запросит подтверждение
-- Проверит версию xray-core — если ниже 24.x, предложит автоматическое обновление
-- Проверит наличие бинарников xray-core и tun2socks — если их нет, выведет ссылки для скачивания
+- Проверит tested matrix бинарников и при отсутствии установит pinned-версии после SHA-256 проверки
+- Не следует автоматически за GitHub `latest`; смена версии явная, существующий бинарник резервируется перед заменой
 - Проверит, не занят ли SOCKS5-порт (10808 по умолчанию) другим процессом
 - Найдёт существующие конфиги и импортирует их в OPNsense (поля в GUI заполнятся сразу)
 - Скопирует все файлы плагина, перезапустит configd, очистит кеши
@@ -106,10 +105,9 @@ configctl xray version
 
 1. Вкладка **Instances** → кнопка **+** (добавить инстанс)
 2. В открывшемся диалоге нажми **Import VLESS link** (сворачиваемая панель вверху) → вставь ссылку → **Parse & Fill**
-   - Для стандартных VLESS+Reality (TCP) ссылок → автоматически заполнит wizard-поля
-   - Для ссылок с другим транспортом (xhttp, ws, grpc, h2, kcp) → автоматически сгенерирует Custom Config JSON (с учётом SOCKS5 Listen/Port из формы)
-3. *(Опционально)* Поле **Bypass Networks** — укажи сети, которые должны идти в обход VPN (по умолчанию: частные сети 10/8, 172.16/12, 192.168/16)
-4. *(Опционально)* **Config Mode** → Custom — для ручной вставки произвольного config.json (любой протокол/транспорт xray-core)
+   - Ссылка преобразуется в **Outbound Config (JSON)** в актуальном синтаксисе Xray 26.x.
+3. *(Опционально)* можно вручную вставить/изменить валидный Xray **outbound object**. Это не полный top-level config: SOCKS inbound, direct outbound и routing добавляет плагин.
+4. *(Опционально)* Поле **Bypass Networks** — укажи сети, которые должны идти в обход VPN (по умолчанию: частные сети 10/8, 172.16/12, 192.168/16)
 5. *(Опционально)* Кнопка **Validate Config** в footer диалога — сухой прогон конфига через `xray -test` без остановки сервиса
 6. Нажми **Save**, затем вкладка **General** → установи галку **Enable Xray** (и **Enable Watchdog** по желанию)
 7. Нажми **Apply**
@@ -136,7 +134,7 @@ configctl xray version
 - **Firewall → Aliases** — создай список IP/сетей/доменов для маршрутизации через VPN
 - **Firewall → Rules → LAN** — добавь правило: Source = LAN net, Destination = alias, Gateway = PROXYTUN_GW
 
-MSS Clamping для Xray не требуется (в отличие от WireGuard).
+Не включай MSS Clamping и не уменьшай MTU заранее. Сначала измеряем PMTU/фрагментацию и меняем MTU/MSS только при подтверждённой проблеме.
 
 ---
 
@@ -144,10 +142,9 @@ MSS Clamping для Xray не требуется (в отличие от WireGua
 
 Без этого трафик через туннель не будет NATиться и не уйдёт дальше VPN-сервера.
 
-**Firewall → NAT → Outbound**
+**Firewall → NAT → Source NAT (Outbound)**
 
-1. Переключи режим на **Hybrid outbound NAT rule generation** (если ещё не переключён)
-2. Добавь правило **+**:
+Добавь Source NAT rule для TUN-интерфейса. В OPNsense 26.7 старый Outbound NAT UI заменён на **Source NAT (Outbound)**. Во время интеграционного теста проверим реально созданное PF-правило:
 
 | Поле | Значение |
 |------|----------|
@@ -160,7 +157,7 @@ MSS Clamping для Xray не требуется (в отличие от WireGua
 | Destination port | any |
 | Translation / target | Interface address |
 
-> **Почему это нужно:** OPNsense по умолчанию NATит трафик только через WAN. Трафик, уходящий через TUN-интерфейс, не попадает под автоматические правила NAT. Без ручного правила пакеты уйдут с исходным LAN-адресом (например 192.168.1.x) и VPN-сервер их отбросит.
+> **Примечание для интеграции:** правило сохранено из архитектуры upstream, но его точную необходимость и трансляцию с tun2socks нужно проверить на OPNsense 26.7 через `pfctl` и packet capture до того, как считать его универсально обязательным.
 
 ---
 
@@ -187,7 +184,7 @@ Watchdog не перезапускает сервис если он был ос�
 ## Остановка сервиса
 
 При остановке (`Stop` в GUI или `Apply` с отключённым Enable) плагин:
-1. Останавливает tun2socks — он сам уничтожает TUN-интерфейс при завершении
+1. Останавливает tun2socks — на FreeBSD его NativeTun при штатном закрытии уничтожает cloned TUN; плагин дополнительно удаляет stale TUN после stop
 2. Останавливает xray-core
 3. Выставляет флаг намеренной остановки — watchdog не будет перезапускать сервис
 
@@ -212,7 +209,7 @@ sh install.sh uninstall
 # Шаг 1 — Плагин и бинарники
 configctl xray version
 ls -la /usr/local/bin/xray-core /usr/local/tun2socks/tun2socks
-/usr/local/bin/xray-core version          # версия xray-core (должна быть 24.x+)
+/usr/local/bin/xray-core version          # production default: 26.3.27 stable
 
 # Шаг 2 — Статус сервисов
 configctl xray statusall                   # JSON: статус всех инстансов
@@ -221,7 +218,7 @@ ps aux | grep -E 'xray|tun2socks'         # реальные процессы
 # Шаг 3 — Валидация конфига
 configctl xray validate                    # сухой прогон без перезапуска
 # или напрямую:
-/usr/local/bin/xray-core -test -c /usr/local/etc/xray-core/config.json
+/usr/local/bin/xray-core run -test -c /usr/local/etc/xray-core/config-<INSTANCE_UUID>.json
 
 # Шаг 4 — Сеть
 ifconfig proxytun2socks0                   # TUN-интерфейс: UP + inet адрес?
