@@ -1062,9 +1062,25 @@ else
 fi
 
 MEMO_TUN="${EXIST_TUN:-proxytun2socks0}"
-MEMO_TUN_IP="${EXIST_TUN_IP:-<TUN_IP>}"
+MEMO_TUN_IP="${EXIST_TUN_IP:-}"
 MEMO_TUN_CIDR="${EXIST_TUN_IP:+${EXIST_TUN_IP}/30}"
 MEMO_TUN_CIDR="${MEMO_TUN_CIDR:-<e.g. 10.255.0.1/30>}"
+MEMO_TUN_GW="<peer IP; e.g. 10.255.0.2 for local 10.255.0.1/30>"
+
+# If an existing TUN IPv4 was detected, derive the other usable address in its /30.
+# This is only a setup hint; OPNsense remains the source of truth for interface/gateway config.
+if [ -n "$MEMO_TUN_IP" ]; then
+    _DERIVED_GW=$(_IP="$MEMO_TUN_IP" php -r '
+        $ip = ip2long(getenv("_IP"));
+        if ($ip === false) exit(1);
+        $u = sprintf("%u", $ip);
+        $net = $u - ($u % 4);
+        $host = $u - $net;
+        if ($host === 1) echo long2ip($net + 2);
+        elseif ($host === 2) echo long2ip($net + 1);
+    ' 2>/dev/null) || _DERIVED_GW=""
+    [ -n "$_DERIVED_GW" ] && MEMO_TUN_GW="$_DERIVED_GW"
+fi
 
 echo "  OPNsense interface & gateway setup:"
 echo ""
@@ -1077,7 +1093,7 @@ echo "       Prevent interface removal: ✓  (обязательно!)"
 echo ""
 echo "  6. System → Gateways → Configuration → Add"
 echo "       Interface:             <your $MEMO_TUN interface name>"
-echo "       Gateway IP:            $MEMO_TUN_IP"
+echo "       Gateway IP:            $MEMO_TUN_GW"
 echo "       Name:                  PROXYTUN_GW"
 echo "       Far Gateway:           ✓  (обязательно!)"
 echo "       Disable GW monitoring: ✓"
