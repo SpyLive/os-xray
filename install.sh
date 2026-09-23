@@ -1,7 +1,7 @@
 #!/bin/sh
 # os-xray OPNsense Plugin Installer
 # Xray-core (VLESS+Reality) + tun2socks
-# Tested on OPNsense 25.x / FreeBSD 14.x
+# Tested target: OPNsense 26.7.x / FreeBSD 15.1 amd64
 # Author: Меркулов Павел Сергеевич
 #
 # Usage:
@@ -18,15 +18,42 @@
 set -e
 set -u
 
-PLUGIN_VERSION="3.0.0"
+PLUGIN_VERSION="3.1.0"
 PLUGIN_DIR="$(dirname "$0")/plugin"
 VERSION_FILE="/usr/local/opnsense/mvc/app/models/OPNsense/Xray/version.txt"
+
+# Tested production matrix. Xray 26.9.9 is newer but upstream marks it prerelease;
+# 3x-ui 3.8.5 uses it. The firewall client defaults to the latest stable Xray.
+XRAY_VERSION="26.3.27"
+XRAY_URL="https://github.com/XTLS/Xray-core/releases/download/v${XRAY_VERSION}/Xray-freebsd-64.zip"
+XRAY_SHA256="c0fcd6962fc8a382e14441370ddbdb6a56e7108c73e817938c626770ac4a1358"
+T2S_VERSION="2.7.0"
+T2S_URL="https://github.com/xjasonlyu/tun2socks/releases/download/v${T2S_VERSION}/tun2socks-freebsd-amd64.zip"
+T2S_SHA256="3ebb747aa83ee3157330beb324bbeaf9a742db6a8d24b9bbc96a4125aaeeeaea"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
 warn() { echo "[WARN] $*" >&2; }
 die()  { echo "[ERROR] $*" >&2; exit 1; }
+
+verify_sha256() {
+    _FILE="$1"
+    _EXPECTED="$2"
+    command -v sha256 >/dev/null 2>&1 || die "sha256 utility not found"
+    _ACTUAL=$(sha256 -q "$_FILE" 2>/dev/null || true)
+    [ -n "$_ACTUAL" ] || die "Could not calculate SHA256 for $_FILE"
+    [ "$_ACTUAL" = "$_EXPECTED" ] || die "SHA256 mismatch for $_FILE (got $_ACTUAL)"
+}
+
+download_verified() {
+    _URL="$1"
+    _DEST="$2"
+    _SHA="$3"
+    rm -f "$_DEST"
+    fetch -o "$_DEST" "$_URL" || die "Download failed: $_URL"
+    verify_sha256 "$_DEST" "$_SHA"
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # UNINSTALL
@@ -114,6 +141,7 @@ detect_existing() {
     EXIST_SHORTID=""
     EXIST_FP=""
     EXIST_FLOW=""
+    EXIST_OUTBOUND=""
     EXIST_SOCKS5=""
     EXIST_TUN=""
     EXIST_MTU=""
@@ -138,8 +166,9 @@ detect_existing() {
             "pubkey"  => "",
             "shortid" => "",
             "fp"      => "",
-            "flow"    => "",
-            "socks5"  => "",
+            "flow"     => "",
+            "outbound" => "",
+            "socks5"   => "",
             "tun"     => "",
             "mtu"     => "",
         ];
@@ -150,23 +179,60 @@ detect_existing() {
             if ($raw !== false) {
                 $j = json_decode($raw, true);
                 if (is_array($j)) {
-                    $vnext = $j["outbounds"][0]["settings"]["vnext"][0] ?? [];
-                    $user  = $vnext["users"][0] ?? [];
-                    $rs    = $j["outbounds"][0]["streamSettings"]["realitySettings"] ?? [];
+                    $proxy = null;
+                    foreach (($j["outbounds"] ?? []) as $candidate) {
+                        if (is_array($candidate) && ($candidate["protocol"] ?? "") === "vless") {
+                            $proxy = $candidate;
+                            break;
+                        }
+                    }
+                    if ($proxy === null) {
+                        foreach (($j["outbounds"] ?? []) as $candidate) {
+                            if (!is_array($candidate)) continue;
+                            $proto = (string)($candidate["protocol"] ?? "");
+                            if (!in_array($proto, ["freedom", "blackhole", "dns"], true)) {
+                                $proxy = $candidate;
+                                break;
+                            }
+                        }
+                    }
 
-                    $out["server"] = (string)($vnext["address"] ?? "");
-                    $port = (int)($vnext["port"] ?? 0);
-                    $out["port"]   = $port > 0 ? (string)$port : "";
-                    $out["uuid"]   = (string)($user["id"]   ?? "");
-                    $out["flow"]   = (string)($user["flow"] ?? "");
-                    $out["sni"]     = (string)($rs["serverName"]  ?? "");
-                    $out["pubkey"]  = (string)($rs["publicKey"]   ?? "");
-                    $out["shortid"] = (string)($rs["shortId"]     ?? "");
-                    $out["fp"]      = (string)($rs["fingerprint"] ?? "");
+                    if (is_array($proxy)) {
+                        $settings = $proxy["settings"] ?? [];
+                        if (isset($settings["address"])) {
+                            $out["server"] = (string)($settings["address"] ?? "");
+                            $port = (int)($settings["port"] ?? 0);
+                            $out["port"] = $port > 0 ? (string)$port : "";
+                            $out["uuid"] = (string)($settings["id"] ?? "");
+                            $out["flow"] = (string)($settings["flow"] ?? "");
+                        } else {
+                            $vnext = $settings["vnext"][0] ?? [];
+                            $user  = $vnext["users"][0] ?? [];
+                            $out["server"] = (string)($vnext["address"] ?? "");
+                            $port = (int)($vnext["port"] ?? 0);
+                            $out["port"] = $port > 0 ? (string)$port : "";
+                            $out["uuid"] = (string)($user["id"] ?? "");
+                            $out["flow"] = (string)($user["flow"] ?? "");
+                        }
 
-                    // SOCKS5 порт — из первого inbound
-                    $s5 = (int)($j["inbounds"][0]["port"] ?? 0);
-                    $out["socks5"] = $s5 > 0 ? (string)$s5 : "";
+                        $rs = $proxy["streamSettings"]["realitySettings"] ?? [];
+                        $out["sni"]     = (string)($rs["serverName"] ?? "");
+                        $out["pubkey"]  = (string)($rs["password"] ?? ($rs["publicKey"] ?? ""));
+                        $out["shortid"] = (string)($rs["shortId"] ?? "");
+                        $out["fp"]      = (string)($rs["fingerprint"] ?? "");
+                        $out["outbound"] = base64_encode(json_encode(
+                            $proxy,
+                            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                        ));
+                    }
+
+                    foreach (($j["inbounds"] ?? []) as $inbound) {
+                        if (($inbound["protocol"] ?? "") === "socks") {
+                            $s5 = (int)($inbound["port"] ?? 0);
+                            $out["socks5"] = $s5 > 0 ? (string)$s5 : "";
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -217,7 +283,7 @@ detect_existing() {
     EXIST_TUN_IP=$(ifconfig "$_TUN_IFACE" 2>/dev/null | awk '/inet /{print $2}') || EXIST_TUN_IP=""
     EXIST_TUN_GW=$(ifconfig "$_TUN_IFACE" 2>/dev/null | awk '/inet /{print $4}') || EXIST_TUN_GW=""
 
-    if [ -n "$EXIST_SERVER" ] || [ -n "$EXIST_UUID" ]; then
+    if [ -n "$EXIST_OUTBOUND" ] || [ -n "$EXIST_SERVER" ] || [ -n "$EXIST_UUID" ]; then
         HAS_EXISTING_CONFIG=1
     fi
 }
@@ -258,27 +324,27 @@ import_existing_config() {
     _SERVER="${EXIST_SERVER:-}"
     _UUID="${EXIST_UUID:-}"
     _PORT="${EXIST_PORT_JSON:-443}"
+    _OUTBOUND_B64="${EXIST_OUTBOUND:-}"
 
-    # Шаг 1: сериализуем значения в JSON через PHP + env-переменные.
-    # env-переменные безопасны для передачи любых строк (пробелы, кавычки и т.д.)
     _TMP_JSON="/tmp/.xray_import_$$.json"
 
     _S="$_SERVER" _P="$_PORT" _U="$_UUID" _FL="$_FLOW" \
     _SN="$_SNI" _PK="$_PUBKEY" _SI="$_SHORTID" _FP2="$_FP" \
-    _S5="$_SOCKS5" _TN="$_TUN" _MT="$_MTU" \
+    _S5="$_SOCKS5" _TN="$_TUN" _MT="$_MTU" _OB="$_OUTBOUND_B64" \
     php -r '
         echo json_encode([
-            "server"  => getenv("_S"),
-            "port"    => (int)getenv("_P") ?: 443,
-            "uuid"    => getenv("_U"),
-            "flow"    => getenv("_FL"),
-            "sni"     => getenv("_SN"),
-            "pubkey"  => getenv("_PK"),
-            "shortid" => getenv("_SI"),
-            "fp"      => getenv("_FP2"),
-            "socks5"  => (int)getenv("_S5") ?: 10808,
-            "tun"     => getenv("_TN"),
-            "mtu"     => (int)getenv("_MT") ?: 1500,
+            "server"       => getenv("_S"),
+            "port"         => (int)getenv("_P") ?: 443,
+            "uuid"         => getenv("_U"),
+            "flow"         => getenv("_FL"),
+            "sni"          => getenv("_SN"),
+            "pubkey"       => getenv("_PK"),
+            "shortid"      => getenv("_SI"),
+            "fp"           => getenv("_FP2"),
+            "socks5"       => (int)getenv("_S5") ?: 10808,
+            "tun"          => getenv("_TN"),
+            "mtu"          => (int)getenv("_MT") ?: 1500,
+            "outbound_b64" => getenv("_OB"),
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     ' > "$_TMP_JSON" 2>/dev/null
 
@@ -288,17 +354,8 @@ import_existing_config() {
         return
     fi
 
-    # Шаг 2: PHP читает JSON из tmpfile и записывает в OPNsense config.xml.
-    # Heredoc с 'PHPEOF' — shell не интерполирует $-переменные внутри.
-    #
-    # BUG-9 FIX: config.inc ищется PHP по include_path.
-    # На этапе установки CWD может быть любым (часто /root или /tmp),
-    # поэтому явно добавляем путь OPNsense через set_include_path() до вызова require.
-    # config.inc расположен в /usr/local/etc/inc/ на всех OPNsense-системах 25.x.
     _XRAY_JSON="$_TMP_JSON" php << 'PHPEOF'
 <?php
-// BUG-9 FIX: явно устанавливаем include_path перед require_once.
-// Без этого при нестандартном CWD (например /root или /tmp) PHP не найдёт config.inc.
 set_include_path('/usr/local/etc/inc' . PATH_SEPARATOR . get_include_path());
 require_once('config.inc');
 
@@ -308,18 +365,58 @@ if ($raw === false) { echo "ERROR: cannot read tmp json\n"; exit(1); }
 $d = json_decode($raw, true);
 if (!is_array($d)) { echo "ERROR: bad json in tmp file\n"; exit(1); }
 
+$outbound = null;
+$obRaw = base64_decode((string)($d['outbound_b64'] ?? ''), true);
+if ($obRaw !== false && $obRaw !== '') {
+    $candidate = json_decode($obRaw, true);
+    if (is_array($candidate) && !empty($candidate['protocol'])) {
+        $outbound = $candidate;
+    }
+}
+
+if ($outbound === null && !empty($d['server']) && !empty($d['uuid'])) {
+    $reality = [
+        'serverName'  => (string)($d['sni'] ?? ''),
+        'fingerprint' => (string)($d['fp'] ?? 'chrome'),
+        'shortId'     => (string)($d['shortid'] ?? ''),
+        'spiderX'     => '/',
+    ];
+    if (!empty($d['pubkey'])) {
+        $reality['publicKey'] = (string)$d['pubkey'];
+    }
+    $outbound = [
+        'tag' => 'proxy',
+        'protocol' => 'vless',
+        'settings' => [
+            'address' => (string)$d['server'],
+            'port' => (int)($d['port'] ?? 443),
+            'id' => (string)$d['uuid'],
+            'encryption' => 'none',
+            'flow' => (string)($d['flow'] ?? ''),
+        ],
+        'streamSettings' => [
+            'network' => 'tcp',
+            'security' => 'reality',
+            'tcpSettings' => ['header' => ['type' => 'none']],
+            'realitySettings' => $reality,
+        ],
+    ];
+}
+
+if ($outbound === null) {
+    echo "ERROR: no usable proxy outbound found\n";
+    exit(1);
+}
+
 $cfg = OPNsense\Core\Config::getInstance();
 $obj = $cfg->object();
-
 if (!isset($obj->OPNsense))       { $obj->addChild('OPNsense'); }
 if (!isset($obj->OPNsense->xray)) { $obj->OPNsense->addChild('xray'); }
 $x = $obj->OPNsense->xray;
 if (!isset($x->general))          { $x->addChild('general'); }
-
-// v2.0.0: ArrayField — instances (plural) с instance (child) с uuid-атрибутом
 if (!isset($x->instances))        { $x->addChild('instances'); }
+
 $inst = $x->instances->addChild('instance');
-// Генерируем UUID для OPNsense BaseModel (атрибут инстанса, не VLESS UUID)
 $instUuid = sprintf(
     '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
     mt_rand(0, 0xffff), mt_rand(0, 0xffff),
@@ -330,21 +427,20 @@ $instUuid = sprintf(
 );
 $inst->addAttribute('uuid', $instUuid);
 
-$x->general->enabled    = '1';
-$inst->addChild('name',                'default');
-$inst->addChild('server_address',      $d['server']);
-$inst->addChild('server_port',         (string)$d['port']);
-$inst->addChild('vless_uuid',          $d['uuid']);
-$inst->addChild('flow',                $d['flow']);
-$inst->addChild('reality_sni',         $d['sni']);
-$inst->addChild('reality_pubkey',      $d['pubkey']);
-$inst->addChild('reality_shortid',     $d['shortid']);
-$inst->addChild('reality_fingerprint', $d['fp']);
-$inst->addChild('socks5_port',         (string)$d['socks5']);
-$inst->addChild('tun_interface',       $d['tun']);
-$inst->addChild('mtu',                 (string)$d['mtu']);
-$inst->addChild('loglevel',            'warning');
-$inst->addChild('config_mode',         'wizard');
+$x->general->enabled = '1';
+$inst->addChild('enabled', '1');
+$inst->addChild('name', 'default');
+$inst->addChild('outbound_config', htmlspecialchars(
+    json_encode($outbound, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+    ENT_XML1 | ENT_QUOTES,
+    'UTF-8'
+));
+$inst->addChild('socks5_listen', '127.0.0.1');
+$inst->addChild('socks5_port', (string)$d['socks5']);
+$inst->addChild('tun_interface', (string)$d['tun']);
+$inst->addChild('mtu', (string)$d['mtu']);
+$inst->addChild('bypass_networks', '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16');
+$inst->addChild('loglevel', 'warning');
 
 $cfg->save();
 echo "Config imported OK\n";
@@ -354,7 +450,7 @@ PHPEOF
     rm -f "$_TMP_JSON"
 
     if [ "$_PHP_EXIT" -eq 0 ]; then
-        echo "[OK]  Existing config imported into OPNsense."
+        echo "[OK]  Existing config imported into OPNsense using outbound_config."
     else
         warn "Could not auto-import config — fill fields manually in GUI."
     fi
@@ -428,94 +524,97 @@ fi
 echo ""
 
 # ── Шаг 1: Проверка бинарников ───────────────────────────────────────────────
-echo "==> Step 1: Checking binaries..."
+echo "==> Step 1: Checking tested binary matrix..."
 BINARIES_OK=1
 
-XRAY_NEEDS_INSTALL=0
-XRAY_NEEDS_UPGRADE=0
+_FB_VER=$(freebsd-version -u 2>/dev/null || uname -r)
+_ARCH=$(uname -m)
+echo "[INFO] FreeBSD: $_FB_VER"
+echo "[INFO] Architecture: $_ARCH"
+echo "[INFO] Tested matrix: Xray ${XRAY_VERSION}, tun2socks ${T2S_VERSION}"
 
-if [ ! -f /usr/local/bin/xray-core ]; then
-    warn "xray-core NOT found at /usr/local/bin/xray-core"
-    BINARIES_OK=0
-    XRAY_NEEDS_INSTALL=1
+if [ "$_ARCH" != "amd64" ]; then
+    die "This fork currently pins/checks amd64 artifacts only (detected $_ARCH)."
+fi
+
+_XRAY_INSTALL=0
+if [ ! -x /usr/local/bin/xray-core ]; then
+    warn "xray-core not found; tested version ${XRAY_VERSION} will be installed."
+    _XRAY_INSTALL=1
 else
     XRAY_VER=$(/usr/local/bin/xray-core version 2>/dev/null | head -1 || echo 'unknown')
     echo "[OK]  xray-core: $XRAY_VER"
-    # P2.5: xray-core 1.x не поддерживает xhttp+Reality (Custom Config).
-    # Рекомендуем 24.x+ для полной совместимости со всеми протоколами.
     case "$XRAY_VER" in
-        *" 1."*)
-            echo ""
-            warn "xray-core 1.x detected. Version 24.x+ is recommended."
-            warn "Custom Config (xhttp, splithttp+Reality) requires 24.x+."
-            XRAY_NEEDS_UPGRADE=1
-            ;;
-    esac
-fi
-
-# Предложить установку или обновление xray-core
-if [ "$XRAY_NEEDS_INSTALL" = "1" ] || [ "$XRAY_NEEDS_UPGRADE" = "1" ]; then
-    echo ""
-    if [ "$XRAY_NEEDS_INSTALL" = "1" ]; then
-        printf "  Download and install xray-core (latest)? [Y/n] "
-    else
-        printf "  Upgrade xray-core to latest version? [Y/n] "
-    fi
-    read -r _XRAY_CONFIRM < /dev/tty 2>/dev/null || _XRAY_CONFIRM="y"
-    case "$_XRAY_CONFIRM" in
-        [nN]*)
-            if [ "$XRAY_NEEDS_INSTALL" = "1" ]; then
-                echo "  Skipped. Install manually:"
-                echo "    fetch -o /tmp/xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-freebsd-64.zip"
-                echo "    cd /tmp && unzip xray.zip xray && install -m 0755 xray /usr/local/bin/xray-core"
-            else
-                echo "  Skipped. Upgrade manually when ready."
-            fi
-            ;;
+        *"Xray ${XRAY_VERSION}"*) ;;
         *)
-            echo "  Downloading latest xray-core..."
-            if fetch -o /tmp/xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-freebsd-64.zip 2>/dev/null; then
-                # Останавливаем xray если запущен (перед заменой бинарника)
-                # v2.0.0: per-instance PID files (xray_core_*.pid)
-                for _PIDFILE in /var/run/xray_core_*.pid /var/run/xray_core.pid; do
-                    [ -f "$_PIDFILE" ] || continue
-                    _PID=$(cat "$_PIDFILE" 2>/dev/null || echo "0")
-                    if kill -0 "$_PID" 2>/dev/null; then
-                        echo "  Stopping running xray-core (PID $_PID)..."
-                        kill "$_PID" 2>/dev/null || true
-                    fi
-                done
-                sleep 1
-                cd /tmp && unzip -o xray.zip xray 2>/dev/null && install -m 0755 /tmp/xray /usr/local/bin/xray-core
-                rm -f /tmp/xray.zip /tmp/xray
-                XRAY_VER=$(/usr/local/bin/xray-core version 2>/dev/null | head -1 || echo 'unknown')
-                echo "  [OK]  xray-core updated: $XRAY_VER"
-                BINARIES_OK=1
-                XRAY_NEEDS_INSTALL=0
-                XRAY_NEEDS_UPGRADE=0
-            else
-                warn "Download failed. Check internet connection."
-                warn "Install manually: fetch -o /tmp/xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-freebsd-64.zip"
-            fi
+            warn "Installed Xray differs from tested stable ${XRAY_VERSION}."
+            printf "  Replace it with tested Xray ${XRAY_VERSION}? [y/N] "
+            read -r _XRAY_CONFIRM < /dev/tty 2>/dev/null || _XRAY_CONFIRM="n"
+            case "$_XRAY_CONFIRM" in [yY]*) _XRAY_INSTALL=1 ;; esac
             ;;
     esac
 fi
 
-if [ ! -f /usr/local/tun2socks/tun2socks ]; then
-    warn "tun2socks NOT found at /usr/local/tun2socks/tun2socks"
-    echo "       Download: https://github.com/xjasonlyu/tun2socks/releases"
-    echo "       fetch -o /tmp/t2s.zip <URL-for-tun2socks-freebsd-amd64.zip>"
-    echo "       cd /tmp && unzip t2s.zip && mkdir -p /usr/local/tun2socks"
-    echo "       install -m 0755 tun2socks-freebsd-amd64 /usr/local/tun2socks/tun2socks"
-    BINARIES_OK=0
-else
-    echo "[OK]  tun2socks found"
+if [ "$_XRAY_INSTALL" = "1" ]; then
+    _XRAY_ZIP="/tmp/os-xray-xray-${XRAY_VERSION}.zip"
+    echo "  Downloading Xray ${XRAY_VERSION}..."
+    download_verified "$XRAY_URL" "$_XRAY_ZIP" "$XRAY_SHA256"
+    rm -rf /tmp/os-xray-xray-unpack
+    mkdir -p /tmp/os-xray-xray-unpack
+    unzip -oq "$_XRAY_ZIP" -d /tmp/os-xray-xray-unpack || die "Could not unpack Xray archive"
+    [ -x /tmp/os-xray-xray-unpack/xray ] || die "xray binary missing from archive"
+    if [ -x /usr/local/bin/xray-core ]; then
+        cp -p /usr/local/bin/xray-core "/usr/local/bin/xray-core.bak.$(date +%Y%m%d%H%M%S)"
+    fi
+    install -m 0755 /tmp/os-xray-xray-unpack/xray /usr/local/bin/xray-core
+    rm -rf "$_XRAY_ZIP" /tmp/os-xray-xray-unpack
+    XRAY_VER=$(/usr/local/bin/xray-core version 2>/dev/null | head -1 || echo 'unknown')
+    case "$XRAY_VER" in *"Xray ${XRAY_VERSION}"*) ;; *) die "Installed Xray version check failed: $XRAY_VER" ;; esac
+    echo "[OK]  xray-core installed: $XRAY_VER"
 fi
 
+_T2S_INSTALL=0
+if [ ! -x /usr/local/tun2socks/tun2socks ]; then
+    warn "tun2socks not found; tested version ${T2S_VERSION} will be installed."
+    _T2S_INSTALL=1
+else
+    T2S_VER=$(/usr/local/tun2socks/tun2socks --version 2>&1 | head -1 || echo 'unknown')
+    echo "[OK]  tun2socks: $T2S_VER"
+    case "$T2S_VER" in
+        *"${T2S_VERSION}"*) ;;
+        *)
+            warn "Installed tun2socks differs from tested ${T2S_VERSION}."
+            printf "  Replace it with tested tun2socks ${T2S_VERSION}? [y/N] "
+            read -r _T2S_CONFIRM < /dev/tty 2>/dev/null || _T2S_CONFIRM="n"
+            case "$_T2S_CONFIRM" in [yY]*) _T2S_INSTALL=1 ;; esac
+            ;;
+    esac
+fi
+
+if [ "$_T2S_INSTALL" = "1" ]; then
+    _T2S_ZIP="/tmp/os-xray-tun2socks-${T2S_VERSION}.zip"
+    echo "  Downloading tun2socks ${T2S_VERSION}..."
+    download_verified "$T2S_URL" "$_T2S_ZIP" "$T2S_SHA256"
+    rm -rf /tmp/os-xray-t2s-unpack
+    mkdir -p /tmp/os-xray-t2s-unpack
+    unzip -oq "$_T2S_ZIP" -d /tmp/os-xray-t2s-unpack || die "Could not unpack tun2socks archive"
+    _T2S_SRC=$(find /tmp/os-xray-t2s-unpack -type f -name 'tun2socks-freebsd-amd64*' | head -1)
+    [ -n "$_T2S_SRC" ] || die "tun2socks binary missing from archive"
+    if [ -x /usr/local/tun2socks/tun2socks ]; then
+        cp -p /usr/local/tun2socks/tun2socks "/usr/local/tun2socks/tun2socks.bak.$(date +%Y%m%d%H%M%S)"
+    fi
+    install -d -m 0750 /usr/local/tun2socks
+    install -m 0755 "$_T2S_SRC" /usr/local/tun2socks/tun2socks
+    rm -rf "$_T2S_ZIP" /tmp/os-xray-t2s-unpack
+    T2S_VER=$(/usr/local/tun2socks/tun2socks --version 2>&1 | head -1 || echo 'unknown')
+    case "$T2S_VER" in *"${T2S_VERSION}"*) ;; *) die "Installed tun2socks version check failed: $T2S_VER" ;; esac
+    echo "[OK]  tun2socks installed: $T2S_VER"
+fi
+
+[ -x /usr/local/bin/xray-core ] || BINARIES_OK=0
+[ -x /usr/local/tun2socks/tun2socks ] || BINARIES_OK=0
 if [ "$BINARIES_OK" = "0" ]; then
-    echo ""
-    warn "One or more binaries are missing. Plugin will be installed,"
-    warn "but Xray will NOT start until binaries are in place."
+    die "Required binaries are not available after Step 1."
 fi
 
 # ── Шаг 2: Определение существующего конфига ─────────────────────────────────
@@ -633,7 +732,9 @@ $cfg = OPNsense\Core\Config::getInstance()->object();
 $instances = $cfg->OPNsense->xray->instances ?? null;
 if ($instances) {
     foreach ($instances->instance as $inst) {
-        if ((string)($inst->server_address ?? "") !== "" || (string)($inst->vless_uuid ?? "") !== "") {
+        if ((string)($inst->outbound_config ?? "") !== "" ||
+            (string)($inst->server_address ?? "") !== "" ||
+            (string)($inst->vless_uuid ?? "") !== "") {
             echo "new";
             exit(0);
         }
@@ -778,6 +879,120 @@ elif [ "$_RENAME_OK" = "SKIP" ]; then
     echo "[SKIP] No rename needed."
 else
     warn "Rename failed: $_RENAME_OK"
+fi
+
+# ── Шаг 4.6.5: Legacy wizard/custom fields → outbound_config ────────────────
+echo ""
+echo "==> Step 4.6.5: Migrating legacy instance fields to outbound_config..."
+
+_LEGACY_OB_OK=$(php << 'PHPEOF'
+<?php
+set_include_path('/usr/local/etc/inc' . PATH_SEPARATOR . get_include_path());
+require_once('config.inc');
+
+$cfg = OPNsense\Core\Config::getInstance();
+$obj = $cfg->object();
+$instances = $obj->OPNsense->xray->instances ?? null;
+if (!$instances) { echo "SKIP"; exit(0); }
+
+$changed = false;
+foreach ($instances->instance as $inst) {
+    if (trim((string)($inst->outbound_config ?? '')) !== '') {
+        continue;
+    }
+
+    $outbound = null;
+    $custom = trim((string)($inst->custom_config ?? ''));
+    if ($custom !== '') {
+        $decoded = json_decode($custom, true);
+        if (is_array($decoded)) {
+            if (!empty($decoded['protocol'])) {
+                $outbound = $decoded;
+            } elseif (!empty($decoded['outbounds']) && is_array($decoded['outbounds'])) {
+                foreach ($decoded['outbounds'] as $candidate) {
+                    if (is_array($candidate) && ($candidate['protocol'] ?? '') === 'vless') {
+                        $outbound = $candidate;
+                        break;
+                    }
+                }
+                if ($outbound === null) {
+                    foreach ($decoded['outbounds'] as $candidate) {
+                        if (!is_array($candidate)) continue;
+                        $proto = (string)($candidate['protocol'] ?? '');
+                        if (!in_array($proto, ['freedom', 'blackhole', 'dns'], true)) {
+                            $outbound = $candidate;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if ($outbound === null) {
+        $server = trim((string)($inst->server_address ?? ''));
+        $uuid   = trim((string)($inst->vless_uuid ?? ''));
+        if ($server !== '' && $uuid !== '') {
+            $port  = (int)(string)($inst->server_port ?? '443');
+            if ($port < 1 || $port > 65535) $port = 443;
+            $flow  = (string)($inst->flow ?? 'xtls-rprx-vision');
+            $sni   = (string)($inst->reality_sni ?? '');
+            $key   = (string)($inst->reality_pubkey ?? '');
+            $sid   = (string)($inst->reality_shortid ?? '');
+            $fp    = (string)($inst->reality_fingerprint ?? 'chrome');
+            if ($fp === '') $fp = 'chrome';
+
+            $reality = [
+                'serverName' => $sni,
+                'fingerprint' => $fp,
+                'shortId' => $sid,
+                'spiderX' => '/',
+            ];
+            if ($key !== '') $reality['publicKey'] = $key;
+
+            $outbound = [
+                'tag' => 'proxy',
+                'protocol' => 'vless',
+                'settings' => [
+                    'address' => $server,
+                    'port' => $port,
+                    'id' => $uuid,
+                    'encryption' => 'none',
+                    'flow' => $flow,
+                ],
+                'streamSettings' => [
+                    'network' => 'tcp',
+                    'security' => 'reality',
+                    'tcpSettings' => ['header' => ['type' => 'none']],
+                    'realitySettings' => $reality,
+                ],
+            ];
+        }
+    }
+
+    if ($outbound !== null) {
+        $json = json_encode($outbound, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $inst->addChild('outbound_config', htmlspecialchars($json, ENT_XML1 | ENT_QUOTES, 'UTF-8'));
+        if (!isset($inst->enabled)) $inst->addChild('enabled', '1');
+        $changed = true;
+    }
+}
+
+if ($changed) {
+    $cfg->save();
+    echo "OK";
+} else {
+    echo "SKIP";
+}
+PHPEOF
+) || true
+
+if [ "$_LEGACY_OB_OK" = "OK" ]; then
+    echo "[OK]  Legacy instances migrated to outbound_config."
+elif [ "$_LEGACY_OB_OK" = "SKIP" ]; then
+    echo "[SKIP] No legacy outbound migration needed."
+else
+    warn "Legacy outbound migration failed: $_LEGACY_OB_OK"
 fi
 
 # ── Шаг 4.7: Cleanup v1.x/v2.x PID files and stale flags ─────────────────────
