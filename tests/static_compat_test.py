@@ -8,6 +8,7 @@ ctl = (root / "plugin/mvc/app/controllers/OPNsense/Xray/Api/InstanceController.p
 stats = (root / "plugin/scripts/Xray/xray-ifstats.php").read_text()
 installer = (root / "install.sh").read_text()
 boot = (root / "plugin/etc/inc/plugins.inc.d/xray.inc").read_text()
+boot_hook = (root / "plugin/etc/rc.syshook.d/start/50-xray").read_text()
 model = (root / "plugin/mvc/app/models/OPNsense/Xray/Instance.xml").read_text()
 all_php = "\n".join(p.read_text() for p in (root / "plugin").rglob("*.php"))
 
@@ -39,6 +40,15 @@ assert "$newInst->addChild('enabled', '0');" in installer
 assert "xray_valid_instance_uuid" in svc
 assert "yaml_scalar($proxyUri)" in svc
 assert "xray_valid_instance_uuid_boot" in boot
+assert "valid_inst_uuid() {" in boot_hook
+assert "grep -Eq '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}assert "releases/latest/download" not in installer
+assert 'Gateway IP:            $MEMO_TUN_GW' in installer
+assert 'Gateway IP:            $MEMO_TUN_IP' not in installer
+assert "<version>3.1.1</version>" in model
+print("static compatibility checks: OK")
+" in boot_hook
+assert "ENABLED=$(php -r '" in boot_hook
+assert "{12}$(php -r" not in boot_hook
 assert "releases/latest/download" not in installer
 assert 'Gateway IP:            $MEMO_TUN_GW' in installer
 assert 'Gateway IP:            $MEMO_TUN_IP' not in installer
