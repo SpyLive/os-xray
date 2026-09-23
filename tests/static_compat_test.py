@@ -44,6 +44,10 @@ assert "valid_inst_uuid() {" in boot_hook
 assert "grep -Eq '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'" in boot_hook
 assert "ENABLED=$(php -r '" in boot_hook
 assert "{12}$(php -r" not in boot_hook
+assert boot_hook.count("setup_instance() {") == 1
+assert boot_hook.count("ENABLED=$(php -r '") == 1
+assert boot_hook.splitlines().count("exit 0") == 1
+assert boot_hook.rstrip().endswith("exit 0")
 assert "releases/latest/download" not in installer
 assert 'Gateway IP:            $MEMO_TUN_GW' in installer
 assert 'Gateway IP:            $MEMO_TUN_IP' not in installer
