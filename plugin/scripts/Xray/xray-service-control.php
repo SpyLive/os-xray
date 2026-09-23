@@ -158,10 +158,11 @@ function xray_normalize_transport(string $json): string
 }
 
 // ─── Write xray config.json (per-instance) ───────────────────────────────────
-function xray_write_config(array $c): void
+function xray_write_config(array $c): bool
 {
-    if (!is_dir(XRAY_CONF_DIR)) {
-        mkdir(XRAY_CONF_DIR, 0750, true);
+    if (!is_dir(XRAY_CONF_DIR) && !mkdir(XRAY_CONF_DIR, 0750, true) && !is_dir(XRAY_CONF_DIR)) {
+        echo "ERROR: cannot create xray config directory\n";
+        return false;
     }
 
     $inst_uuid = $c['inst_uuid'];
@@ -170,12 +171,12 @@ function xray_write_config(array $c): void
     $raw = trim($c['outbound_config'] ?? '');
     if ($raw === '') {
         echo "ERROR: outbound_config is empty\n";
-        return;
+        return false;
     }
     $outbound = json_decode($raw, true);
-    if ($outbound === null) {
-        echo "ERROR: outbound_config is not valid JSON\n";
-        return;
+    if (!is_array($outbound) || empty($outbound['protocol'])) {
+        echo "ERROR: outbound_config must be a valid Xray outbound JSON object\n";
+        return false;
     }
     $config = [
         'log'      => ['loglevel' => $c['loglevel'] ?? 'warning'],
@@ -190,25 +191,54 @@ function xray_write_config(array $c): void
         'routing'   => xray_build_routing($c['bypass_networks'] ?? ''),
     ];
     $json = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if ($json === false) {
+        echo "ERROR: failed to encode xray config JSON\n";
+        return false;
+    }
     $json = xray_normalize_transport($json);
 
-    file_put_contents($confFile, $json);
-    chmod($confFile, 0640);
+    $tmpFile = $confFile . '.tmp.' . getmypid();
+    if (file_put_contents($tmpFile, $json, LOCK_EX) === false) {
+        echo "ERROR: failed to write temporary xray config\n";
+        @unlink($tmpFile);
+        return false;
+    }
+    @chmod($tmpFile, 0640);
+    if (!@rename($tmpFile, $confFile)) {
+        echo "ERROR: failed to atomically replace xray config\n";
+        @unlink($tmpFile);
+        return false;
+    }
+    return true;
 }
 
 // ─── Write tun2socks config.yaml (per-instance) ──────────────────────────────
-function t2s_write_config(array $c): void
+function t2s_write_config(array $c): bool
 {
-    if (!is_dir(T2S_CONF_DIR)) {
-        mkdir(T2S_CONF_DIR, 0750, true);
+    if (!is_dir(T2S_CONF_DIR) && !mkdir(T2S_CONF_DIR, 0750, true) && !is_dir(T2S_CONF_DIR)) {
+        echo "ERROR: cannot create tun2socks config directory\n";
+        return false;
     }
     $inst_uuid = $c['inst_uuid'];
+    $confFile  = t2s_conf_path($inst_uuid);
     $yaml = "proxy: socks5://{$c['socks5_listen']}:{$c['socks5_port']}\n"
           . "device: {$c['tun_iface']}\n"
           . "mtu: {$c['mtu']}\n"
           . "loglevel: info\n";
-    file_put_contents(t2s_conf_path($inst_uuid), $yaml);
-    chmod(t2s_conf_path($inst_uuid), 0640);
+
+    $tmpFile = $confFile . '.tmp.' . getmypid();
+    if (file_put_contents($tmpFile, $yaml, LOCK_EX) === false) {
+        echo "ERROR: failed to write temporary tun2socks config\n";
+        @unlink($tmpFile);
+        return false;
+    }
+    @chmod($tmpFile, 0640);
+    if (!@rename($tmpFile, $confFile)) {
+        echo "ERROR: failed to atomically replace tun2socks config\n";
+        @unlink($tmpFile);
+        return false;
+    }
+    return true;
 }
 
 // ─── PID helpers (FreeBSD: no posix extension — use /bin/kill) ───────────────
@@ -432,8 +462,12 @@ function do_start(array $c): bool
         // БАГ-5 FIX: снимаем флаг намеренной остановки
         @unlink(xray_stopped_flag($inst_uuid));
 
-        xray_write_config($c);
-        t2s_write_config($c);
+        if (!xray_write_config($c)) {
+            return false;
+        }
+        if (!t2s_write_config($c)) {
+            return false;
+        }
 
         lo0_alias_ensure($c['socks5_listen']);
 
@@ -569,20 +603,25 @@ switch ($action) {
             do_stop($inst_uuid, $tunIface);
             sleep(1);
             if (!empty($c) && $c['enabled']) {
-                do_start($c);
+                $ok = do_start($c);
+                exit($ok ? 0 : 1);
             }
-        } else {
-            $all = xray_get_all_instances();
-            foreach ($all as $uuid => $c) {
-                $tunIface = $c['tun_iface'] ?? 'proxytun2socks0';
-                do_stop($uuid, $tunIface);
-            }
-            sleep(1);
-            foreach ($all as $uuid => $c) {
-                if ($c['enabled']) do_start($c);
+            exit(0);
+        }
+
+        $all = xray_get_all_instances();
+        foreach ($all as $uuid => $c) {
+            $tunIface = $c['tun_iface'] ?? 'proxytun2socks0';
+            do_stop($uuid, $tunIface);
+        }
+        sleep(1);
+        $anyFailed = false;
+        foreach ($all as $uuid => $c) {
+            if ($c['enabled'] && !do_start($c)) {
+                $anyFailed = true;
             }
         }
-        break;
+        exit($anyFailed ? 1 : 0);
 
     case 'reconfigure':
         // B10: возвращаем реальный статус
