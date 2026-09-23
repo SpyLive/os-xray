@@ -14,10 +14,18 @@ class InstanceController extends ApiMutableModelControllerBase
         $response = $this->searchBase('instance', ['enabled', 'name', 'outbound_config']);
         if (!empty($response['rows'])) {
             foreach ($response['rows'] as &$row) {
-                $ob    = json_decode($row['outbound_config'] ?? '', true);
-                $vnext = $ob['settings']['vnext'][0] ?? [];
-                $row['server_address'] = $vnext['address'] ?? '';
-                $row['server_port']    = isset($vnext['port']) ? (string)$vnext['port'] : '';
+                $ob       = json_decode($row['outbound_config'] ?? '', true);
+                $settings = is_array($ob) ? ($ob['settings'] ?? []) : [];
+
+                // Xray 26.x simplified VLESS settings first, legacy vnext fallback.
+                if (isset($settings['address'])) {
+                    $row['server_address'] = (string)$settings['address'];
+                    $row['server_port']    = isset($settings['port']) ? (string)$settings['port'] : '';
+                } else {
+                    $vnext = $settings['vnext'][0] ?? [];
+                    $row['server_address'] = (string)($vnext['address'] ?? '');
+                    $row['server_port']    = isset($vnext['port']) ? (string)$vnext['port'] : '';
+                }
                 unset($row['outbound_config']);
             }
             unset($row);
