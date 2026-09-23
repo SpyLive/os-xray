@@ -175,20 +175,23 @@ class ImportController extends ApiControllerBase
         $flow = in_array($flow, $allowedFlow, true) ? $flow : 'xtls-rprx-vision';
         $fp   = in_array($fp,   $allowedFp,   true) ? $fp   : 'chrome';
 
-        // Build outbound object — raw values (json_encode handles escaping)
+        // Xray 26.x simplified (flat) VLESS outbound.
+        // Legacy vnext remains readable by Xray, but new configs use the
+        // current address/port/id/encryption/flow shape.
+        $encryption = trim((string)($params['encryption'] ?? 'none'));
+        if ($encryption === '') {
+            $encryption = 'none';
+        }
+
         $outbound = [
             'tag'      => 'proxy',
             'protocol' => 'vless',
             'settings' => [
-                'vnext' => [[
-                    'address' => $host,
-                    'port'    => $port,
-                    'users'   => [[
-                        'id'         => $uuid,
-                        'encryption' => $params['encryption'] ?? 'none',
-                        'flow'       => $flow,
-                    ]],
-                ]],
+                'address'    => $host,
+                'port'       => $port,
+                'id'         => $uuid,
+                'encryption' => $encryption,
+                'flow'       => $flow,
             ],
             'streamSettings' => $this->buildStreamSettings($type, $security, $params),
         ];
@@ -211,14 +214,23 @@ class ImportController extends ApiControllerBase
 
         // ── Security settings ────────────────────────────────────────────
         if ($security === 'reality') {
-            $ss['realitySettings'] = [
+            $reality = [
                 'serverName'  => $params['sni'] ?? '',
                 'fingerprint' => $params['fp']  ?? 'chrome',
-                'show'        => false,
-                'publicKey'   => $params['pbk'] ?? '',
                 'shortId'     => $params['sid'] ?? '',
                 'spiderX'     => $params['spx'] ?? '',
             ];
+
+            // Xray 26.x accepts the newer Reality "password" field while
+            // current VLESS share links / 3x-ui commonly still use pbk/publicKey.
+            // Preserve whichever form the source link explicitly carries.
+            if (!empty($params['password'])) {
+                $reality['password'] = $params['password'];
+            } elseif (!empty($params['pbk'])) {
+                $reality['publicKey'] = $params['pbk'];
+            }
+
+            $ss['realitySettings'] = $reality;
         } elseif ($security === 'tls') {
             $tls = [
                 'serverName'  => $params['sni'] ?? '',
