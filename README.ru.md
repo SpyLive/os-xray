@@ -5,7 +5,7 @@
 [![Release](https://img.shields.io/github/v/release/SpyLive/os-xray)](https://github.com/SpyLive/os-xray/releases)
 [![License](https://img.shields.io/github/license/SpyLive/os-xray)](https://github.com/SpyLive/os-xray/blob/develop/LICENSE)
 [![Downloads](https://img.shields.io/github/downloads/SpyLive/os-xray/total)](https://github.com/SpyLive/os-xray/releases)
-[![OPNsense](https://img.shields.io/badge/OPNsense-25.x%20%2F%2026.x-blue)](https://opnsense.org)
+[![OPNsense](https://img.shields.io/badge/OPNsense-26.7.x-blue)](https://opnsense.org)
 [![FreeBSD](https://img.shields.io/badge/FreeBSD-15.1%20amd64-red)](https://freebsd.org)
 
 **Xray-core VPN plugin for OPNsense** — форк совместимости SpyLive v3.1.0
@@ -138,7 +138,7 @@ configctl xray version
 
 ---
 
-## Outbound NAT (обязательно!)
+## Source NAT — интеграционная проверка на OPNsense 26.7
 
 Без этого трафик через туннель не будет NATиться и не уйдёт дальше VPN-сервера.
 
