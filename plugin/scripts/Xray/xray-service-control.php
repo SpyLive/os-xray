@@ -310,7 +310,7 @@ function xray_validate_config(string $confFile): bool
         echo "ERROR: config file not found after write: {$confFile}\n";
         return false;
     }
-    exec(escapeshellarg(XRAY_BIN) . ' -test -c ' . escapeshellarg($confFile) . ' 2>&1', $out, $rc);
+    exec(escapeshellarg(XRAY_BIN) . ' run -test -c ' . escapeshellarg($confFile) . ' 2>&1', $out, $rc);
     if ($rc !== 0) {
         echo "ERROR: xray config validation failed:\n" . implode("\n", $out) . "\n";
         return false;
@@ -444,7 +444,7 @@ function do_start(array $c): bool
             usleep(800000);
         }
         if (!proc_is_running(t2s_pid_path($inst_uuid))) {
-            proc_start(T2S_BIN, '-config ' . escapeshellarg(t2s_conf_path($inst_uuid)), t2s_pid_path($inst_uuid), $instLog);
+            proc_start(T2S_BIN, '--config ' . escapeshellarg(t2s_conf_path($inst_uuid)), t2s_pid_path($inst_uuid), $instLog);
             usleep(800000);
         }
 
