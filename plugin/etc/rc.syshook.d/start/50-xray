@@ -23,7 +23,10 @@ T2S_BIN="/usr/local/tun2socks/tun2socks"
 INST_UUID="${1:-}"
 
 valid_inst_uuid() {
-    printf '%s\n' "$1" | grep -Eq '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$(php -r 'set_include_path("/usr/local/etc/inc" . PATH_SEPARATOR . get_include_path()); require_once("config.inc"); $cfg = OPNsense\Core\Config::getInstance()->object(); echo (string)($cfg->OPNsense->xray->general->enabled ?? "0");' 2>/dev/null)
+    printf '%s\n' "$1" | grep -Eq '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+}
+
+ENABLED=$(php -r 'set_include_path("/usr/local/etc/inc" . PATH_SEPARATOR . get_include_path()); require_once("config.inc"); $cfg = OPNsense\Core\Config::getInstance()->object(); echo (string)($cfg->OPNsense->xray->general->enabled ?? "0");' 2>/dev/null)
 
 echo "enabled=[$ENABLED] inst_uuid=[$INST_UUID]"
 
@@ -129,127 +132,6 @@ else
                 $enabled = (string)$inst->enabled;
                 if (preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/D', $uuid)
                     && $enabled === "1")
-                    echo $uuid . "\n";
-            }
-        }
-    ' 2>/dev/null)
-
-    for uuid in $INST_UUIDS; do
-        setup_instance "$uuid"
-    done
-fi
-
-echo "reloading filter..."
-/usr/local/sbin/configctl filter reload 2>&1
-
-echo "reconfiguring interfaces..."
-/usr/local/sbin/configctl interface reconfigure 2>&1
-
-echo "=== done: $(date) ==="
-exit 0
-
-}
-
-ENABLED=$(php -r 'set_include_path("/usr/local/etc/inc" . PATH_SEPARATOR . get_include_path()); require_once("config.inc"); $cfg = OPNsense\Core\Config::getInstance()->object(); echo (string)($cfg->OPNsense->xray->general->enabled ?? "0");' 2>/dev/null)
-
-echo "enabled=[$ENABLED] inst_uuid=[$INST_UUID]"
-
-[ "$ENABLED" = "1" ] || { echo "xray disabled, exit"; exit 0; }
-[ -f "$XRAY_BIN" ]   || { echo "xray-core not found"; exit 0; }
-[ -f "$T2S_BIN" ]    || { echo "tun2socks not found"; exit 0; }
-
-# Функция: настроить TUN для одного инстанса
-setup_instance() {
-    _INST_UUID="$1"
-
-    # BUG-8 FIX: ожидаем per-instance lock
-    _XRAY_LOCK="/var/run/xray_start_${_INST_UUID}.lock"
-    _lock_tries=0
-    while [ -f "$_XRAY_LOCK" ] && [ $_lock_tries -lt 10 ]; do
-        echo "  [${_INST_UUID}] waiting for lock (${_lock_tries}s)..."
-        sleep 1
-        _lock_tries=$((_lock_tries+1))
-    done
-
-    # Read tun_interface and mtu in one PHP call;
-    # Note: SimpleXML elements are never null, so ?? is dead code — use string check.
-    _INST_INFO=$(_INST_UUID="$_INST_UUID" php -r '
-        set_include_path("/usr/local/etc/inc" . PATH_SEPARATOR . get_include_path());
-        require_once("config.inc");
-        $cfg  = OPNsense\Core\Config::getInstance()->object();
-        $uuid = getenv("_INST_UUID");
-        foreach ($cfg->OPNsense->xray->instances->instance as $inst) {
-            if ((string)$inst["uuid"] === $uuid) {
-                $tun = (string)$inst->tun_interface;
-                $mtu = (string)$inst->mtu;
-                echo "TUN_IFACE=" . ($tun !== "" ? $tun : "proxytun2socks0") . "\n";
-                echo "MTU="       . ($mtu !== "" ? $mtu : "1500")            . "\n";
-                exit(0);
-            }
-        }
-        echo "TUN_IFACE=proxytun2socks0\n";
-        echo "MTU=1500\n";
-    ' 2>>"$LOG")
-
-    eval "$_INST_INFO"
-    TUN_IFACE="${TUN_IFACE:-proxytun2socks0}"
-    MTU="${MTU:-1500}"
-
-    echo "[${_INST_UUID}] tun=[$TUN_IFACE] mtu=[$MTU]"
-
-    # Ждём TUN интерфейс до 10 секунд
-    echo "waiting for $TUN_IFACE..."
-    i=0
-    while [ $i -lt 10 ]; do
-        ifconfig "$TUN_IFACE" > /dev/null 2>&1 && break
-        sleep 1
-        i=$((i+1))
-        echo "  ${i}s..."
-    done
-
-    ifconfig "$TUN_IFACE" > /dev/null 2>&1 || { echo "[${_INST_UUID}] interface $TUN_IFACE not found after 10s!"; return 0; }
-
-    # Поднимаем интерфейс и назначаем MTU
-    ifconfig "$TUN_IFACE" mtu "$MTU" up 2>&1
-
-    # Назначаем IP из OPNsense interfaces (BUG-2 FIX: через env)
-    TUN_IP=$(_TUN_IFACE="$TUN_IFACE" php -r '
-        set_include_path("/usr/local/etc/inc" . PATH_SEPARATOR . get_include_path());
-        require_once("config.inc");
-        $cfg = OPNsense\Core\Config::getInstance()->object();
-        $tun = getenv("_TUN_IFACE");
-        if (empty($tun)) $tun = "proxytun2socks0";
-        foreach ($cfg->interfaces->children() as $iface) {
-            if ((string)$iface->if === $tun) {
-                echo (string)$iface->ipaddr . "/" . (string)$iface->subnet;
-                break;
-            }
-        }
-    ' 2>/dev/null)
-
-    if [ -n "$TUN_IP" ]; then
-        echo "[${_INST_UUID}] assigning $TUN_IP to $TUN_IFACE..."
-        ifconfig "$TUN_IFACE" inet "$TUN_IP" 2>&1
-    else
-        echo "[${_INST_UUID}] WARNING: no IP found in config, skipping IP assignment"
-    fi
-}
-
-if [ -n "$INST_UUID" ]; then
-    # Обрабатываем конкретный инстанс
-    setup_instance "$INST_UUID"
-else
-    # Обрабатываем все инстансы
-    INST_UUIDS=$(php -r '
-        set_include_path("/usr/local/etc/inc" . PATH_SEPARATOR . get_include_path());
-        require_once("config.inc");
-        $cfg = OPNsense\Core\Config::getInstance()->object();
-        $instances = $cfg->OPNsense->xray->instances ?? null;
-        if ($instances) {
-            foreach ($instances->instance as $inst) {
-                $uuid    = (string)$inst["uuid"];
-                $enabled = (string)$inst->enabled;
-                if ($uuid !== "" && $enabled === "1")
                     echo $uuid . "\n";
             }
         }
