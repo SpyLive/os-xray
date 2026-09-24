@@ -696,6 +696,10 @@ install_tree "$PLUGIN_DIR/etc/inc/plugins.inc.d" \
              "/usr/local/etc/inc/plugins.inc.d" 0644
 
 install -d /usr/local/etc/rc.syshook.d/start
+# Remove legacy v1/v2 boot hook. Current plugin uses 50-xray; leaving 91-xray
+# behind causes OPNsense to call the removed /usr/local/etc/rc.d/xray script
+# on every boot and reports a start-script error.
+rm -f /usr/local/etc/rc.syshook.d/start/91-xray
 install_tree "$PLUGIN_DIR/etc/rc.syshook.d/start" \
              "/usr/local/etc/rc.syshook.d/start" 0755
 
