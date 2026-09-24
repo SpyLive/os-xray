@@ -130,7 +130,7 @@ else
             foreach ($instances->instance as $inst) {
                 $uuid    = (string)$inst["uuid"];
                 $enabled = (string)$inst->enabled;
-                if (preg_match('/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/D', $uuid)
+                if (preg_match("/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/D", $uuid)
                     && $enabled === "1")
                     echo $uuid . "\n";
             }
