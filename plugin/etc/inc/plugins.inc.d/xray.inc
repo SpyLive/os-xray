@@ -1,5 +1,13 @@
 <?php
 
+function xray_valid_instance_uuid_boot(string $uuid): bool
+{
+    return (bool)preg_match(
+        '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/D',
+        $uuid
+    );
+}
+
 function xray_enabled(): bool
 {
     $cfg = OPNsense\Core\Config::getInstance()->object();
@@ -18,7 +26,9 @@ function xray_configure(): array
  * v3.0.0: итерирует все инстансы из config.xml, для каждого:
  *   - Захватывает per-instance lock (xray_start_<uuid>.lock)
  *   - Запускает xray-core + tun2socks если не запущены
- *   - Ждёт TUN-интерфейс до 5 секунд
+ *   - Ждёт TUN-интерфейс до 10 секунд
+ *   - До reload firewall/routing поднимает TUN, выставляет MTU и назначает
+ *     IPv4 из OPNsense interface assignment
  */
 function xray_configure_do(bool $verbose = false): void
 {
@@ -42,7 +52,8 @@ function xray_configure_do(bool $verbose = false): void
 
     foreach ($instances->instance as $inst) {
         $inst_uuid = (string)$inst['uuid'];
-        if ($inst_uuid === '' || (string)($inst->enabled ?? '1') !== '1') {
+        if (!xray_valid_instance_uuid_boot($inst_uuid)
+            || (string)($inst->enabled ?? '1') !== '1') {
             continue;
         }
 
@@ -52,6 +63,10 @@ function xray_configure_do(bool $verbose = false): void
         $t2sPid    = "/var/run/tun2socks_{$inst_uuid}.pid";
         $lockFile  = "/var/run/xray_start_{$inst_uuid}.lock";
         $tunIface  = (string)($inst->tun_interface ?? 'proxytun2socks0');
+        $tunMtu    = (int)(string)($inst->mtu ?? '1500');
+        if ($tunMtu < 576 || $tunMtu > 9000) {
+            $tunMtu = 1500;
+        }
 
         // BUG-1 FIX: per-instance lock без goto. Если lock занят — пропускаем.
         $lockFd       = false;
@@ -100,19 +115,59 @@ function xray_configure_do(bool $verbose = false): void
                         . ' ' . escapeshellarg($t2sBin)
                         . ' --config ' . escapeshellarg($t2sConf)
                         . ' >> ' . $log . ' 2>&1 &');
+                }
 
-                    // Ждём TUN до 5 секунд
-                    $rc = 1;
-                    for ($i = 0; $i < 5; $i++) {
-                        exec('/sbin/ifconfig ' . escapeshellarg($tunIface) . ' 2>/dev/null', $o, $rc);
-                        if ($rc === 0) {
-                            break;
+                // The boot hook runs after OPNsense's first interface pass. At this
+                // point tun2socks may have created the TUN, but OPNsense still sees
+                // the assigned OPT interface as addressless. Configure the TUN
+                // before firewall/routing reload below.
+                $rc = 1;
+                for ($i = 0; $i < 10; $i++) {
+                    $o = [];
+                    exec('/sbin/ifconfig ' . escapeshellarg($tunIface) . ' 2>/dev/null', $o, $rc);
+                    if ($rc === 0) {
+                        break;
+                    }
+                    sleep(1);
+                }
+
+                if ($verbose) {
+                    echo "xray [{$inst_uuid}]: TUN {$tunIface} " . ($rc === 0 ? "present" : "not found after 10s") . "\n";
+                }
+
+                if ($rc === 0) {
+                    $ifOut = [];
+                    $ifRc  = 1;
+                    exec('/sbin/ifconfig ' . escapeshellarg($tunIface)
+                        . ' mtu ' . $tunMtu . ' up 2>&1', $ifOut, $ifRc);
+
+                    $tunIp     = '';
+                    $tunSubnet = '';
+                    if (isset($cfg->interfaces)) {
+                        foreach ($cfg->interfaces->children() as $ifaceCfg) {
+                            if ((string)$ifaceCfg->if === $tunIface) {
+                                $tunIp     = trim((string)$ifaceCfg->ipaddr);
+                                $tunSubnet = trim((string)$ifaceCfg->subnet);
+                                break;
+                            }
                         }
-                        sleep(1);
                     }
 
-                    if ($verbose) {
-                        echo "xray [{$inst_uuid}]: TUN {$tunIface} " . ($rc === 0 ? "up" : "not found after 5s") . "\n";
+                    if (filter_var($tunIp, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)
+                        && ctype_digit($tunSubnet)
+                        && (int)$tunSubnet >= 0
+                        && (int)$tunSubnet <= 32) {
+                        $cidr = $tunIp . '/' . $tunSubnet;
+                        $addrOut = [];
+                        $addrRc  = 1;
+                        exec('/sbin/ifconfig ' . escapeshellarg($tunIface)
+                            . ' inet ' . escapeshellarg($cidr) . ' 2>&1', $addrOut, $addrRc);
+                        if ($verbose) {
+                            echo "xray [{$inst_uuid}]: assigned {$cidr} to {$tunIface}"
+                                . ($addrRc === 0 ? "" : " (ifconfig rc={$addrRc})") . "\n";
+                        }
+                    } elseif ($verbose) {
+                        echo "xray [{$inst_uuid}]: WARNING: no valid IPv4 assignment found for {$tunIface}\n";
                     }
                 }
             } finally {
@@ -158,7 +213,8 @@ function xray_services()
     if ($instances) {
         foreach ($instances->instance as $inst) {
             $inst_uuid = (string)$inst['uuid'];
-            if ($inst_uuid === '' || (string)($inst->enabled ?? '1') !== '1') {
+            if (!xray_valid_instance_uuid_boot($inst_uuid)
+                || (string)($inst->enabled ?? '1') !== '1') {
                 continue;
             }
             $name       = (string)($inst->name ?? 'default');

@@ -12,6 +12,26 @@ define('T2S_CONF_DIR',      '/usr/local/tun2socks');
 define('XRAY_DAEMON_LOG',   '/var/log/xray-core.log'); // общий лог (fallback)
 define('XRAY_VERSION_FILE', '/usr/local/opnsense/mvc/app/models/OPNsense/Xray/version.txt');
 
+function xray_valid_instance_uuid(string $uuid): bool
+{
+    return (bool)preg_match(
+        '/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/D',
+        $uuid
+    );
+}
+
+function yaml_scalar(string $value): string
+{
+    // Keep simple scalars unchanged; quote everything with YAML-significant
+    // characters. json_encode() produces a valid double-quoted YAML scalar.
+    if ($value !== '' && preg_match('/^[A-Za-z0-9._\/@+\-]+$/D', $value)) {
+        return $value;
+    }
+
+    $encoded = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    return $encoded !== false ? $encoded : '""';
+}
+
 // ─── Per-instance path functions ─────────────────────────────────────────────
 // v3.0.0: все runtime-файлы именуются по UUID инстанса, чтобы N инстансов
 // не конфликтовали за один PID-файл / конфиг / lock.
@@ -96,7 +116,9 @@ function xray_get_all_instances(): array
     foreach ($ins->instance as $inst) {
         // SimpleXML: атрибуты читаются через $element['attr']
         $inst_uuid = (string)$inst['uuid'];
-        if ($inst_uuid === '') {
+        if (!xray_valid_instance_uuid($inst_uuid)) {
+            // Never allow config.xml data to influence runtime file paths unless
+            // it is a canonical instance UUID.
             continue;
         }
         $c = xray_parse_instance($inst, $globalEnabled);
@@ -221,9 +243,10 @@ function t2s_write_config(array $c): bool
     }
     $inst_uuid = $c['inst_uuid'];
     $confFile  = t2s_conf_path($inst_uuid);
-    $yaml = "proxy: socks5://{$c['socks5_listen']}:{$c['socks5_port']}\n"
-          . "device: {$c['tun_iface']}\n"
-          . "mtu: {$c['mtu']}\n"
+    $proxyUri  = 'socks5://' . $c['socks5_listen'] . ':' . $c['socks5_port'];
+    $yaml = 'proxy: ' . yaml_scalar($proxyUri) . "\n"
+          . 'device: ' . yaml_scalar((string)$c['tun_iface']) . "\n"
+          . 'mtu: ' . (int)$c['mtu'] . "\n"
           . "loglevel: info\n";
 
     $tmpFile = $confFile . '.tmp.' . getmypid();

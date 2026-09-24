@@ -22,6 +22,10 @@ T2S_BIN="/usr/local/tun2socks/tun2socks"
 # Если не задан — обрабатываем все инстансы из config.xml
 INST_UUID="${1:-}"
 
+valid_inst_uuid() {
+    printf '%s\n' "$1" | grep -Eq '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
+}
+
 ENABLED=$(php -r 'set_include_path("/usr/local/etc/inc" . PATH_SEPARATOR . get_include_path()); require_once("config.inc"); $cfg = OPNsense\Core\Config::getInstance()->object(); echo (string)($cfg->OPNsense->xray->general->enabled ?? "0");' 2>/dev/null)
 
 echo "enabled=[$ENABLED] inst_uuid=[$INST_UUID]"
@@ -33,6 +37,11 @@ echo "enabled=[$ENABLED] inst_uuid=[$INST_UUID]"
 # Функция: настроить TUN для одного инстанса
 setup_instance() {
     _INST_UUID="$1"
+
+    if ! valid_inst_uuid "$_INST_UUID"; then
+        echo "  [skip] invalid instance UUID: $_INST_UUID"
+        return 0
+    fi
 
     # BUG-8 FIX: ожидаем per-instance lock
     _XRAY_LOCK="/var/run/xray_start_${_INST_UUID}.lock"
@@ -121,7 +130,8 @@ else
             foreach ($instances->instance as $inst) {
                 $uuid    = (string)$inst["uuid"];
                 $enabled = (string)$inst->enabled;
-                if ($uuid !== "" && $enabled === "1")
+                if (preg_match("/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/D", $uuid)
+                    && $enabled === "1")
                     echo $uuid . "\n";
             }
         }
