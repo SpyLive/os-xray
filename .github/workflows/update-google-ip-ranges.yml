@@ -64,11 +64,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          if git diff --quiet -- lists/google-ipv4.txt lists/google-ipv6.txt; then
+          # git add FIRST, then diff the STAGED state — plain `git diff` never
+          # shows untracked files, which was the bug on the very first run
+          # (lists/ didn't exist yet, so the old check always said "no change").
+          git add lists/google-ipv4.txt lists/google-ipv6.txt
+
+          if git diff --cached --quiet; then
             echo "No change in Google IP ranges — nothing to commit."
             exit 0
           fi
 
-          git add lists/google-ipv4.txt lists/google-ipv6.txt
           git commit -m "chore: update Google IP ranges ($(date -u +%Y-%m-%d))"
           git push
