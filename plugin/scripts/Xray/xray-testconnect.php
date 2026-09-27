@@ -8,7 +8,10 @@
  * Проблема: если пользователь изменил socks5_port в GUI, тест продолжал
  * стучаться на старый порт и всегда возвращал ошибку подключения.
  *
- * После: читаем socks5_port из config.xml — тест всегда использует актуальный порт.
+ * После:
+ *   - читаем socks5_port из config.xml;
+ *   - используем --socks5-hostname, чтобы DNS для redirect/hostname выполнялся
+ *     через Xray, а не локальным resolver OPNsense.
  */
 
 require_once('config.inc');
@@ -46,7 +49,7 @@ $timeout = '10';
 
 exec(
     '/usr/local/bin/curl'
-    . ' --socks5 ' . escapeshellarg($proxy)
+    . ' --socks5-hostname ' . escapeshellarg($proxy)
     . ' -s -L -o /dev/null'
     . ' -w %{http_code}'
     . ' ' . escapeshellarg($target)
