@@ -1,0 +1,74 @@
+name: Update Google IP ranges
+
+# Note: scheduled runs always use the workflow file from the repo's
+# DEFAULT branch, regardless of which branches also contain this file.
+# Place it on your default branch for the cron trigger to actually fire.
+
+on:
+  schedule:
+    - cron: '0 3 * * *'   # daily at 03:00 UTC — adjust as needed
+  workflow_dispatch: {}    # allows manual "Run workflow" from the Actions tab
+
+concurrency:
+  group: update-google-ip-ranges
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch official Google IP ranges
+        run: |
+          set -euo pipefail
+          curl -fsSL https://www.gstatic.com/ipranges/goog.json  -o /tmp/goog.json
+          curl -fsSL https://www.gstatic.com/ipranges/cloud.json -o /tmp/cloud.json
+
+      - name: Convert JSON -> plain-text CIDR lists
+        run: |
+          set -euo pipefail
+          mkdir -p lists
+
+          jq -r '.prefixes[].ipv4Prefix // empty' /tmp/goog.json /tmp/cloud.json \
+            | sort -u -V > /tmp/ipv4.txt
+          jq -r '.prefixes[].ipv6Prefix // empty' /tmp/goog.json /tmp/cloud.json \
+            | sort -u -V > /tmp/ipv6.txt
+
+          [ -s /tmp/ipv4.txt ] || { echo "::error::ipv4 list is empty, aborting"; exit 1; }
+          [ -s /tmp/ipv6.txt ] || { echo "::error::ipv6 list is empty, aborting"; exit 1; }
+
+          GEN_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          {
+            echo "# Google IPv4 ranges — auto-generated, do not edit by hand"
+            echo "# Source: gstatic.com/ipranges/goog.json + cloud.json"
+            echo "# Generated: $GEN_TIME"
+            cat /tmp/ipv4.txt
+          } > lists/google-ipv4.txt
+
+          {
+            echo "# Google IPv6 ranges — auto-generated, do not edit by hand"
+            echo "# Source: gstatic.com/ipranges/goog.json + cloud.json"
+            echo "# Generated: $GEN_TIME"
+            cat /tmp/ipv6.txt
+          } > lists/google-ipv6.txt
+
+      - name: Commit and push if changed
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet -- lists/google-ipv4.txt lists/google-ipv6.txt; then
+            echo "No change in Google IP ranges — nothing to commit."
+            exit 0
+          fi
+
+          git add lists/google-ipv4.txt lists/google-ipv6.txt
+          git commit -m "chore: update Google IP ranges ($(date -u +%Y-%m-%d))"
+          git push
