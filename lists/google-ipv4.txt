@@ -1,6 +1,6 @@
 # Google IPv4 ranges — auto-generated, do not edit by hand
 # Source: gstatic.com/ipranges/goog.json + cloud.json
-# Generated: 2026-09-28T09:28:22Z
+# Generated: 2026-09-29T09:33:10Z
 8.8.4.0/24
 8.8.8.0/24
 8.34.208.0/20
