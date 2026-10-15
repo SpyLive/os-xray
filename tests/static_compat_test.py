@@ -24,6 +24,10 @@ assert "run -test -c" in svc
 assert "tun_destroy($tunIface);" not in svc
 assert 'proc_is_running(t2s_pid_path($uuid)) || proc_is_running(xray_pid_path($uuid))' in svc
 assert 'if (isset($enabledIfaces[$iface]))' in svc
+assert "function tun_owned_by_instance(string $iface, string $uuid): bool" in svc
+assert "strpos($command, t2s_conf_path($uuid)) !== false" in svc
+assert "tun_owned_by_instance($c['tun_iface'], $inst_uuid)" in svc
+assert "tun_owner_pid($c['tun_iface']) === $tunPid" not in svc
 assert "function proc_kill(string $pidfile): bool" in svc
 assert "if (!proc_kill(t2s_pid_path($inst_uuid))) return false;" in svc
 assert "if (!proc_kill(xray_pid_path($inst_uuid))) return false;" in svc
