@@ -414,19 +414,6 @@ function lo0_alias_remove(string $addr): void
     }
 }
 
-// ─── B9: TUN interface teardown ───────────────────────────────────────────────
-function tun_destroy(string $iface): void
-{
-    if (empty($iface)) {
-        return;
-    }
-    exec('/sbin/ifconfig ' . escapeshellarg($iface) . ' 2>/dev/null', $out, $rc);
-    if ($rc !== 0) {
-        return;
-    }
-    exec('/sbin/ifconfig ' . escapeshellarg($iface) . ' destroy 2>/dev/null');
-}
-
 // ─── High-level per-instance actions ─────────────────────────────────────────
 
 /**
