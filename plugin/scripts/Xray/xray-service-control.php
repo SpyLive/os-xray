@@ -278,35 +278,44 @@ function proc_is_running(string $pidfile): bool
     return $rc === 0;
 }
 
-function proc_kill(string $pidfile): void
+function proc_kill(string $pidfile): bool
 {
-    if (!file_exists($pidfile)) {
-        return;
-    }
+    if (!file_exists($pidfile)) return true;
     $pid = (int)trim(file_get_contents($pidfile));
-    if ($pid > 0) {
-        // БАГ-4 FIX: проверяем что PID принадлежит нашему процессу
-        $comm = trim((string)shell_exec('ps -o comm= -p ' . $pid . ' 2>/dev/null'));
-        if ($comm === '' || (strpos($comm, 'xray') === false && strpos($comm, 'tun2socks') === false)) {
-            @unlink($pidfile);
-            return;
-        }
-
-        exec('/bin/kill -TERM ' . $pid . ' 2>/dev/null');
-        $i = 0;
-        while ($i++ < 30) {
-            exec('/bin/kill -0 ' . $pid . ' 2>/dev/null', $out, $rc);
-            if ($rc !== 0) {
-                break;
-            }
+    if ($pid <= 0) {
+        @unlink($pidfile);
+        return true;
+    }
+    exec('/bin/kill -0 ' . $pid . ' 2>/dev/null', $probe, $alive);
+    if ($alive !== 0) {
+        @unlink($pidfile);
+        return true;
+    }
+    $comm = trim((string)shell_exec('ps -o comm= -p ' . $pid . ' 2>/dev/null'));
+    if ($comm === '' || (strpos($comm, 'xray') === false && strpos($comm, 'tun2socks') === false)) {
+        echo "ERROR: PID {$pid} is not an expected Xray process; refusing unsafe stop.\n";
+        return false;
+    }
+    exec('/bin/kill -TERM ' . $pid . ' 2>/dev/null');
+    for ($i = 0; $i < 30; $i++) {
+        usleep(100000);
+        exec('/bin/kill -0 ' . $pid . ' 2>/dev/null', $out, $rc);
+        if ($rc !== 0) break;
+    }
+    if ($rc === 0) {
+        exec('/bin/kill -KILL ' . $pid . ' 2>/dev/null');
+        for ($i = 0; $i < 20; $i++) {
             usleep(100000);
+            exec('/bin/kill -0 ' . $pid . ' 2>/dev/null', $out2, $rc);
+            if ($rc !== 0) break;
         }
-        exec('/bin/kill -0 ' . $pid . ' 2>/dev/null', $out2, $rc2);
-        if ($rc2 === 0) {
-            exec('/bin/kill -KILL ' . $pid . ' 2>/dev/null');
-        }
+    }
+    if ($rc === 0) {
+        echo "ERROR: PID {$pid} still exists; refusing to start replacement.\n";
+        return false;
     }
     @unlink($pidfile);
+    return true;
 }
 
 function proc_start(string $bin, string $args, string $pidfile, string $logfile = ''): void
@@ -419,7 +428,7 @@ function lo0_alias_remove(string $addr): void
 /**
  * do_stop() — останавливает tun2socks и xray-core инстанса, выставляет stopped flag.
  */
-function do_stop(string $inst_uuid, ?string $tunIface = null): void
+function do_stop(string $inst_uuid, ?string $tunIface = null): bool
 {
     if ($tunIface === null) {
         $c        = xray_get_config($inst_uuid);
@@ -429,10 +438,10 @@ function do_stop(string $inst_uuid, ?string $tunIface = null): void
     // Never explicitly destroy an OPNsense-assigned TUN here.  tun2socks owns
     // its FreeBSD NativeTun handle; destroying the interface while that handle
     // remains open can block forever inside kernel tun_destroy (FreeBSD 15.1).
-    proc_kill(t2s_pid_path($inst_uuid));
+    if (!proc_kill(t2s_pid_path($inst_uuid))) return false;
 
     // Останавливаем xray-core
-    proc_kill(xray_pid_path($inst_uuid));
+    if (!proc_kill(xray_pid_path($inst_uuid))) return false;
 
     // Удаляем lo0 alias если был добавлен
     $c2 = xray_get_config($inst_uuid);
@@ -442,6 +451,7 @@ function do_stop(string $inst_uuid, ?string $tunIface = null): void
     file_put_contents(xray_stopped_flag($inst_uuid), date('Y-m-d H:i:s'));
 
     echo "Stopped.\n";
+    return true;
 }
 
 /**
@@ -459,6 +469,13 @@ function do_start(array $c): bool
     }
 
     $inst_uuid = $c['inst_uuid'];
+    foreach (xray_get_all_instances() as $otherUuid => $other) {
+        if ($otherUuid !== $inst_uuid && $other['tun_iface'] === $c['tun_iface']
+            && proc_is_running(t2s_pid_path($otherUuid))) {
+            echo "ERROR: TUN {$c['tun_iface']} is already used by instance {$otherUuid}.\n";
+            return false;
+        }
+    }
 
     // B7: захватываем per-instance lock перед запуском
     $lock = lock_acquire($inst_uuid);
@@ -597,10 +614,10 @@ switch ($action) {
 
     case 'stop':
         if ($inst_uuid !== '') {
-            do_stop($inst_uuid);
+            if (!do_stop($inst_uuid)) exit(1);
         } else {
             foreach (array_keys(xray_get_all_instances()) as $uuid) {
-                do_stop($uuid);
+                if (!do_stop($uuid)) exit(1);
             }
         }
         break;
@@ -609,7 +626,7 @@ switch ($action) {
         if ($inst_uuid !== '') {
             $c        = xray_get_config($inst_uuid);
             $tunIface = $c['tun_iface'] ?? 'proxytun2socks0';
-            do_stop($inst_uuid, $tunIface);
+            if (!do_stop($inst_uuid, $tunIface)) exit(1);
             sleep(1);
             if (!empty($c) && $c['enabled']) {
                 $ok = do_start($c);
@@ -621,7 +638,7 @@ switch ($action) {
         $all = xray_get_all_instances();
         foreach ($all as $uuid => $c) {
             $tunIface = $c['tun_iface'] ?? 'proxytun2socks0';
-            do_stop($uuid, $tunIface);
+            if (!do_stop($uuid, $tunIface)) exit(1);
         }
         sleep(1);
         $anyFailed = false;
@@ -673,7 +690,10 @@ switch ($action) {
             // Disabled/stopped instances must not interfere with the active
             // instance, especially when all profiles share the same TUN.
             if (proc_is_running(t2s_pid_path($uuid)) || proc_is_running(xray_pid_path($uuid))) {
-                do_stop($uuid, $c['tun_iface'] ?? 'proxytun2socks0');
+                if (!do_stop($uuid, $c['tun_iface'] ?? 'proxytun2socks0')) {
+                    echo "ERROR: Cannot stop instance {$uuid}; Apply aborted.\n";
+                    exit(1);
+                }
             }
             $allStopped[$uuid] = $c;
         }
