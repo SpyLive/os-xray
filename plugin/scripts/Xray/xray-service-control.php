@@ -439,11 +439,10 @@ function do_stop(string $inst_uuid, ?string $tunIface = null): void
         $tunIface = $c['tun_iface'] ?? 'proxytun2socks0';
     }
 
-    // Останавливаем tun2socks первым — он держит TUN open.
-    // On FreeBSD tun2socks normally destroys the cloned TUN on graceful close,
-    // but explicit cleanup also handles stale interfaces after forced/crashed exits.
+    // Never explicitly destroy an OPNsense-assigned TUN here.  tun2socks owns
+    // its FreeBSD NativeTun handle; destroying the interface while that handle
+    // remains open can block forever inside kernel tun_destroy (FreeBSD 15.1).
     proc_kill(t2s_pid_path($inst_uuid));
-    tun_destroy($tunIface);
 
     // Останавливаем xray-core
     proc_kill(xray_pid_path($inst_uuid));
@@ -667,12 +666,28 @@ switch ($action) {
                 exit(0);
             }
         }
-        // Без UUID: рекофигурируем все инстансы
-        $all       = xray_get_all_instances();
+        // Без UUID: prevent two enabled instances from claiming one TUN.
+        // Validate before stopping anything, so a conflicting configuration
+        // cannot interrupt the currently working tunnel.
+        $all = xray_get_all_instances();
+        $enabledIfaces = [];
+        foreach ($all as $uuid => $c) {
+            if (!$c['enabled']) continue;
+            $iface = $c['tun_iface'];
+            if (isset($enabledIfaces[$iface])) {
+                echo "ERROR: TUN {$iface} is enabled for multiple instances ({$enabledIfaces[$iface]}, {$uuid}). Disable one before Apply.\n";
+                exit(1);
+            }
+            $enabledIfaces[$iface] = $uuid;
+        }
+
         $allStopped = [];
         foreach ($all as $uuid => $c) {
-            $tunIface = $c['tun_iface'] ?? 'proxytun2socks0';
-            do_stop($uuid, $tunIface);
+            // Disabled/stopped instances must not interfere with the active
+            // instance, especially when all profiles share the same TUN.
+            if (proc_is_running(t2s_pid_path($uuid)) || proc_is_running(xray_pid_path($uuid))) {
+                do_stop($uuid, $c['tun_iface'] ?? 'proxytun2socks0');
+            }
             $allStopped[$uuid] = $c;
         }
         sleep(1);
