@@ -275,6 +275,15 @@ function tun_owner_pid(string $iface): int
     return 0; // interface may exist without an open NativeTun handle
 }
 
+function tun_owned_by_instance(string $iface, string $uuid): bool
+{
+    $pid = tun_owner_pid($iface);
+    if ($pid <= 0) return false;
+    $command = trim((string)shell_exec('/bin/ps -ww -o command= -p ' . $pid . ' 2>/dev/null'));
+    return strpos($command, T2S_BIN) !== false &&
+           strpos($command, t2s_conf_path($uuid)) !== false;
+}
+
 function tun_wait_unowned(string $iface, int $oldOwner = 0): bool
 {
     for ($i = 0; $i < 30; $i++) {
@@ -283,7 +292,7 @@ function tun_wait_unowned(string $iface, int $oldOwner = 0): bool
         if ($owner < 0) return false;
         usleep(100000);
     }
-    echo "ERROR: TUN {$iface} is still owned by PID " . tun_owner_pid($iface) . ".\\n";
+    echo "ERROR: TUN {$iface} is still owned by PID " . tun_owner_pid($iface) . ".\n";
     return false;
 }
 
@@ -462,6 +471,10 @@ function do_stop(string $inst_uuid, ?string $tunIface = null): bool
     // its FreeBSD NativeTun handle; destroying the interface while that handle
     // remains open can block forever inside kernel tun_destroy (FreeBSD 15.1).
     $ownerBefore = tun_owner_pid($tunIface);
+    if ($ownerBefore > 0 && !tun_owned_by_instance($tunIface, $inst_uuid)) {
+        echo "ERROR: TUN {$tunIface} belongs to a different instance (PID {$ownerBefore}).\n";
+        return false;
+    }
     if (!proc_kill(t2s_pid_path($inst_uuid))) return false;
     // Missing/stale PID files are not evidence that NativeTun was released.
     // Never terminate an unrelated TUN owner; abort safely instead.
@@ -497,8 +510,8 @@ function do_start(array $c): bool
 
     $inst_uuid = $c['inst_uuid'];
     $owner = tun_owner_pid($c['tun_iface']);
-    if ($owner !== 0 && !proc_is_running(t2s_pid_path($inst_uuid))) {
-        echo "ERROR: TUN {$c['tun_iface']} has owner PID {$owner}; refusing competing start.\\n";
+    if ($owner !== 0 && !tun_owned_by_instance($c['tun_iface'], $inst_uuid)) {
+        echo "ERROR: TUN {$c['tun_iface']} has owner PID {$owner}; refusing competing start.\n";
         return false;
     }
     foreach (xray_get_all_instances() as $otherUuid => $other) {
@@ -540,7 +553,7 @@ function do_start(array $c): bool
             usleep(800000);
         }
         if (!proc_is_running(xray_pid_path($inst_uuid))) {
-            echo "ERROR: xray-core failed to start for {$inst_uuid}.\\n";
+            echo "ERROR: xray-core failed to start for {$inst_uuid}.\n";
             return false;
         }
         if (!proc_is_running(t2s_pid_path($inst_uuid))) {
@@ -548,16 +561,15 @@ function do_start(array $c): bool
         }
         $ready = false;
         for ($i = 0; $i < 30; $i++) {
-            $tunPid = proc_is_running(t2s_pid_path($inst_uuid))
-                ? (int)trim((string)file_get_contents(t2s_pid_path($inst_uuid))) : 0;
-            if ($tunPid > 0 && tun_owner_pid($c['tun_iface']) === $tunPid) {
+            if (proc_is_running(t2s_pid_path($inst_uuid))
+                && tun_owned_by_instance($c['tun_iface'], $inst_uuid)) {
                 $ready = true;
                 break;
             }
             usleep(100000);
         }
         if (!$ready) {
-            echo "ERROR: tun2socks did not acquire TUN {$c['tun_iface']} for {$inst_uuid}.\\n";
+            echo "ERROR: tun2socks did not acquire TUN {$c['tun_iface']} for {$inst_uuid}.\n";
             return false;
         }
 
