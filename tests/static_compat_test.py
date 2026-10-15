@@ -11,6 +11,7 @@ installer = (root / "install.sh").read_text()
 boot = (root / "plugin/etc/inc/plugins.inc.d/xray.inc").read_text()
 boot_hook = (root / "plugin/etc/rc.syshook.d/start/50-xray").read_text()
 model = (root / "plugin/mvc/app/models/OPNsense/Xray/Instance.xml").read_text()
+watchdog = (root / "plugin/scripts/Xray/xray-watchdog.php").read_text()
 all_php = "\n".join(p.read_text() for p in (root / "plugin").rglob("*.php"))
 
 assert "T2S_BIN, '--config " in svc
@@ -23,6 +24,12 @@ assert "run -test -c" in svc
 assert "tun_destroy($tunIface);" not in svc
 assert 'proc_is_running(t2s_pid_path($uuid)) || proc_is_running(xray_pid_path($uuid))' in svc
 assert 'if (isset($enabledIfaces[$iface]))' in svc
+assert "function proc_kill(string $pidfile): bool" in svc
+assert "if (!proc_kill(t2s_pid_path($inst_uuid))) return false;" in svc
+assert "if (!proc_kill(xray_pid_path($inst_uuid))) return false;" in svc
+assert 'if (!do_stop($uuid, $c[\'tun_iface\']' in svc
+assert "proc_is_running(t2s_pid_path($otherUuid))" in svc
+assert "if ((string)($inst->enabled ?? '0') !== '1')" in watchdog
 assert "'address'    => $host" in imp
 assert "'vnext' => [[" not in imp
 assert "$settings['address']" in ctl and "$settings['vnext'][0]" in ctl
