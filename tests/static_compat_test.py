@@ -19,7 +19,10 @@ assert "' --config ' . escapeshellarg($t2sConf)" in boot
 assert "' -config ' . escapeshellarg($t2sConf)" not in boot
 assert "' -config '" not in all_php
 assert "run -test -c" in svc
-assert "tun_destroy($tunIface);" in svc
+# Regression: FreeBSD tun_destroy may block while tun2socks still owns /dev/tun.
+assert "tun_destroy($tunIface);" not in svc
+assert 'proc_is_running(t2s_pid_path($uuid)) || proc_is_running(xray_pid_path($uuid))' in svc
+assert 'if (isset($enabledIfaces[$iface]))' in svc
 assert "'address'    => $host" in imp
 assert "'vnext' => [[" not in imp
 assert "$settings['address']" in ctl and "$settings['vnext'][0]" in ctl
