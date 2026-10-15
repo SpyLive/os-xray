@@ -264,6 +264,29 @@ function t2s_write_config(array $c): bool
     return true;
 }
 
+// NativeTun reports its actual owner even when a daemon PID file is missing.
+function tun_owner_pid(string $iface): int
+{
+    if (!preg_match('/^[a-z][a-z0-9]{0,13}[0-9]$/D', $iface)) return -1;
+    $lines = [];
+    exec('/sbin/ifconfig ' . escapeshellarg($iface) . ' 2>/dev/null', $lines, $rc);
+    if ($rc !== 0) return 0; // interface absent
+    if (preg_match('/Opened by PID\\s+(\\d+)/', implode("\\n", $lines), $m)) return (int)$m[1];
+    return 0; // interface may exist without an open NativeTun handle
+}
+
+function tun_wait_unowned(string $iface, int $oldOwner = 0): bool
+{
+    for ($i = 0; $i < 30; $i++) {
+        $owner = tun_owner_pid($iface);
+        if ($owner === 0) return true;
+        if ($owner < 0) return false;
+        usleep(100000);
+    }
+    echo "ERROR: TUN {$iface} is still owned by PID " . tun_owner_pid($iface) . ".\\n";
+    return false;
+}
+
 // ─── PID helpers (FreeBSD: no posix extension — use /bin/kill) ───────────────
 function proc_is_running(string $pidfile): bool
 {
@@ -438,7 +461,11 @@ function do_stop(string $inst_uuid, ?string $tunIface = null): bool
     // Never explicitly destroy an OPNsense-assigned TUN here.  tun2socks owns
     // its FreeBSD NativeTun handle; destroying the interface while that handle
     // remains open can block forever inside kernel tun_destroy (FreeBSD 15.1).
+    $ownerBefore = tun_owner_pid($tunIface);
     if (!proc_kill(t2s_pid_path($inst_uuid))) return false;
+    // Missing/stale PID files are not evidence that NativeTun was released.
+    // Never terminate an unrelated TUN owner; abort safely instead.
+    if ($ownerBefore > 0 && !tun_wait_unowned($tunIface, $ownerBefore)) return false;
 
     // Останавливаем xray-core
     if (!proc_kill(xray_pid_path($inst_uuid))) return false;
@@ -469,6 +496,11 @@ function do_start(array $c): bool
     }
 
     $inst_uuid = $c['inst_uuid'];
+    $owner = tun_owner_pid($c['tun_iface']);
+    if ($owner !== 0 && !proc_is_running(t2s_pid_path($inst_uuid))) {
+        echo "ERROR: TUN {$c['tun_iface']} has owner PID {$owner}; refusing competing start.\\n";
+        return false;
+    }
     foreach (xray_get_all_instances() as $otherUuid => $other) {
         if ($otherUuid !== $inst_uuid && $other['tun_iface'] === $c['tun_iface']
             && proc_is_running(t2s_pid_path($otherUuid))) {
@@ -507,9 +539,26 @@ function do_start(array $c): bool
             proc_start(XRAY_BIN, 'run -c ' . escapeshellarg(xray_conf_path($inst_uuid)), xray_pid_path($inst_uuid), $instLog);
             usleep(800000);
         }
+        if (!proc_is_running(xray_pid_path($inst_uuid))) {
+            echo "ERROR: xray-core failed to start for {$inst_uuid}.\\n";
+            return false;
+        }
         if (!proc_is_running(t2s_pid_path($inst_uuid))) {
             proc_start(T2S_BIN, '--config ' . escapeshellarg(t2s_conf_path($inst_uuid)), t2s_pid_path($inst_uuid), $instLog);
-            usleep(800000);
+        }
+        $ready = false;
+        for ($i = 0; $i < 30; $i++) {
+            $tunPid = proc_is_running(t2s_pid_path($inst_uuid))
+                ? (int)trim((string)file_get_contents(t2s_pid_path($inst_uuid))) : 0;
+            if ($tunPid > 0 && tun_owner_pid($c['tun_iface']) === $tunPid) {
+                $ready = true;
+                break;
+            }
+            usleep(100000);
+        }
+        if (!$ready) {
+            echo "ERROR: tun2socks did not acquire TUN {$c['tun_iface']} for {$inst_uuid}.\\n";
+            return false;
         }
 
         // Назначаем IP на TUN через syshook (ждёт TUN, читает IP из config, reload firewall)
@@ -654,7 +703,7 @@ switch ($action) {
         if ($inst_uuid !== '') {
             $c        = xray_get_config($inst_uuid);
             $tunIface = $c['tun_iface'] ?? 'proxytun2socks0';
-            do_stop($inst_uuid, $tunIface);
+            if (!do_stop($inst_uuid, $tunIface)) exit(1);
             sleep(1);
             if (!empty($c) && $c['enabled']) {
                 $ok = do_start($c);
