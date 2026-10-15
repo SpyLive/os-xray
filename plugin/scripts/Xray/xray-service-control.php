@@ -63,6 +63,15 @@ function xray_instance_log(string $inst_uuid): string
 {
     return "/var/log/xray-core-{$inst_uuid}.log";
 }
+function xray_applied_hash_path(string $inst_uuid): string
+{
+    return "/var/run/xray_applied_{$inst_uuid}.sha256";
+}
+function xray_instance_hash(array $c): string
+{
+    // Includes all parsed service settings; never persist the plaintext outbound.
+    return hash('sha256', json_encode($c, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+}
 
 // ─── Read config from OPNsense config.xml ────────────────────────────────────
 
@@ -488,6 +497,7 @@ function do_stop(string $inst_uuid, ?string $tunIface = null): bool
     lo0_alias_remove($c2['socks5_listen'] ?? '127.0.0.1');
 
     // БАГ-5 FIX: флаг намеренной остановки — watchdog не перезапускает
+    @unlink(xray_applied_hash_path($inst_uuid));
     file_put_contents(xray_stopped_flag($inst_uuid), date('Y-m-d H:i:s'));
 
     echo "Stopped.\n";
@@ -576,6 +586,9 @@ function do_start(array $c): bool
         // Назначаем IP на TUN через syshook (ждёт TUN, читает IP из config, reload firewall)
         exec('/bin/sh /usr/local/etc/rc.syshook.d/start/50-xray ' . escapeshellarg($inst_uuid) . ' &');
 
+        if (file_put_contents(xray_applied_hash_path($inst_uuid), xray_instance_hash($c), LOCK_EX) === false) {
+            echo "WARNING: Could not record applied config hash for {$inst_uuid}.\n";
+        }
         echo "Started.\n";
         return true;
     } finally {
@@ -750,7 +763,19 @@ switch ($action) {
         foreach ($all as $uuid => $c) {
             // Disabled/stopped instances must not interfere with the active
             // instance, especially when all profiles share the same TUN.
-            if (proc_is_running(t2s_pid_path($uuid)) || proc_is_running(xray_pid_path($uuid))) {
+            $running = proc_is_running(t2s_pid_path($uuid)) || proc_is_running(xray_pid_path($uuid));
+            $hashFile = xray_applied_hash_path($uuid);
+            $unchanged = $c['enabled'] && $running
+                && proc_is_running(t2s_pid_path($uuid))
+                && proc_is_running(xray_pid_path($uuid))
+                && tun_owned_by_instance($c['tun_iface'], $uuid)
+                && is_file($hashFile)
+                && hash_equals(xray_instance_hash($c), trim((string)file_get_contents($hashFile)));
+            if ($unchanged) {
+                echo "INFO: Instance {$uuid} already running with unchanged configuration.\n";
+                continue;
+            }
+            if ($running) {
                 if (!do_stop($uuid, $c['tun_iface'] ?? 'proxytun2socks0')) {
                     echo "ERROR: Cannot stop instance {$uuid}; Apply aborted.\n";
                     exit(1);
@@ -761,7 +786,13 @@ switch ($action) {
         sleep(1);
         $anyFailed = false;
         foreach ($allStopped as $uuid => $c) {
-            if ($c['enabled']) {
+            if ($c['enabled'] && !(
+                proc_is_running(t2s_pid_path($uuid))
+                && proc_is_running(xray_pid_path($uuid))
+                && tun_owned_by_instance($c['tun_iface'], $uuid)
+                && is_file(xray_applied_hash_path($uuid))
+                && hash_equals(xray_instance_hash($c), trim((string)file_get_contents(xray_applied_hash_path($uuid))))
+            )) {
                 if (!do_start($c)) {
                     $anyFailed = true;
                 }
