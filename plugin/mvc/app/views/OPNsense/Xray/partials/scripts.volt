@@ -133,6 +133,8 @@
                 var dfObj = new $.Deferred();
                 saveFormToEndpoint("/api/xray/general/set", 'frm_general_settings', function () {
                     dfObj.resolve();
+                }, false, function () {
+                    dfObj.reject();
                 });
                 return dfObj;
             }
