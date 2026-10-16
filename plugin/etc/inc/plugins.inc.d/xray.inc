@@ -50,6 +50,26 @@ function xray_configure_do(bool $verbose = false): void
         return;
     }
 
+    // Validate shared resources before starting any service. Multiple stored
+    // profiles may share a TUN, but no two enabled profiles may claim it.
+    $enabledTuns = [];
+    $enabledSocks = [];
+    foreach ($instances->instance as $entry) {
+        $uuid = (string)$entry['uuid'];
+        if (!xray_valid_instance_uuid_boot($uuid)
+            || (string)($entry->enabled ?? '1') !== '1') continue;
+        $tun = (string)($entry->tun_interface ?? 'proxytun2socks0');
+        $listen = (string)($entry->socks5_listen ?? '127.0.0.1');
+        $port = (string)($entry->socks5_port ?? '10808');
+        $sock = $listen . ':' . $port;
+        if (isset($enabledTuns[$tun]) || isset($enabledSocks[$sock])) {
+            error_log("xray boot: enabled profiles conflict on TUN {$tun} or SOCKS {$sock}; refusing startup");
+            return;
+        }
+        $enabledTuns[$tun] = $uuid;
+        $enabledSocks[$sock] = $uuid;
+    }
+
     foreach ($instances->instance as $inst) {
         $inst_uuid = (string)$inst['uuid'];
         if (!xray_valid_instance_uuid_boot($inst_uuid)
