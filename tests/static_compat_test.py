@@ -15,6 +15,17 @@ watchdog = (root / "plugin/scripts/Xray/xray-watchdog.php").read_text()
 ui = (root / "plugin/mvc/app/views/OPNsense/Xray/partials/scripts.volt").read_text()
 api = (root / "plugin/mvc/app/controllers/OPNsense/Xray/Api/ServiceController.php").read_text()
 all_php = "\n".join(p.read_text() for p in (root / "plugin").rglob("*.php"))
+upgrade = (root / "upgrade.sh").read_text()
+assert "sh upgrade.sh" in (root / "README.ru.md").read_text()
+assert "sh upgrade.sh" in (root / "README.md").read_text()
+assert 'cp -p /conf/config.xml "$BACKUP/config.xml"' in upgrade
+assert 'service configd restart' in upgrade
+assert 'system_cron_configure();' in upgrade
+assert 'xray-service-control.php stop' not in upgrade
+assert 'configctl xray reconfigure' not in upgrade
+assert '/usr/local/bin/xray-core' not in upgrade
+assert '/usr/local/tun2socks/tun2socks' not in upgrade
+assert 'install.sh uninstall' not in upgrade
 
 # Regressions confirmed on FreeBSD 15.1 with multiple profiles sharing one TUN.
 assert "Opened by PID" in svc and "implode(" in svc and "tun_owner_pid" in svc
