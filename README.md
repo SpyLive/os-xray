@@ -100,6 +100,29 @@ configctl xray version
 
 ---
 
+## Updating an existing 3.x installation (configuration-preserving)
+
+**Do not use `install.sh` for routine live upgrades.** It also performs first-install imports, legacy migrations, binary checks and legacy PID cleanup. For an already configured 3.x instance, use the separate `upgrade.sh` from the intended **release tag/main commit**, not a moving development branch.
+
+Before updating, make an OPNsense/Proxmox backup and retain an independent console or alternate management route. The updater backs up `/conf/config.xml` and existing plugin files under `/root/os-xray-upgrade-YYYYMMDD-HHMMSS/`. It replaces only plugin-owned files, leaves VPN binaries and current Xray/tun2socks processes running, reloads configd, and regenerates the watchdog cron registration. It does **not** run Apply. Updates from 1.x/2.x require a separate migration plan.
+
+```sh
+cd /root
+git clone --branch main https://github.com/SpyLive/os-xray.git os-xray-main
+cd os-xray-main
+git rev-parse HEAD              # record and verify intended release commit
+sh upgrade.sh
+configctl xray statusall
+ifconfig proxytun2socks0
+crontab -l | grep 'xray watchdog'
+```
+
+For future upgrades in the same checkout, use `git fetch origin main && git checkout main && git pull --ff-only`, **review the commit and release notes**, then run `sh upgrade.sh`. Do not run `sh install.sh uninstall` as an upgrade step; it removes plugin files and stops VPN services. Restore from the backup and console if verification fails rather than restarting VPN blindly.
+
+**Common TUN:** multiple profiles may be configured, but only one profile using `proxytun2socks0` may be Enabled. A second Enabled profile causes Apply to reject the configuration *before* stopping the active instance. Start cannot override a disabled profile.
+
+---
+
 ## GUI Setup
 
 Refresh browser (`Ctrl+F5`) → **VPN → Xray**
@@ -193,7 +216,7 @@ When stopping (`Stop` in GUI or `Apply` with Enable unchecked):
 ## Uninstall
 
 ```sh
-cd /tmp/os-xray-v5
+cd /root/os-xray-main
 sh install.sh uninstall
 ```
 
@@ -236,8 +259,8 @@ cat /tmp/xray_syshook.log
 tail -20 /var/log/xray-watchdog.log
 
 # Step 7 — Configs
-cat /usr/local/etc/xray-core/config.json
-cat /usr/local/tun2socks/config.yaml
+cat /usr/local/etc/xray-core/config-<INSTANCE_UUID>.json
+cat /usr/local/tun2socks/config-<INSTANCE_UUID>.yaml
 ```
 
 ---
@@ -251,7 +274,7 @@ cat /usr/local/tun2socks/config.yaml
 | `xray-core not found at /usr/local/bin/xray-core` | Binary missing | Install xray-core (see Manual Binary Installation below) |
 | `tun2socks not found at /usr/local/tun2socks/tun2socks` | Binary missing | Install tun2socks (see below) |
 | `Xray is disabled in config` | Enable not checked | GUI → General → Enable Xray ✓ → Apply |
-| `Another start is already in progress (lock held)` | Parallel start, lock file held | Wait 30s. If persists: `rm -f /var/run/xray_start.lock` |
+| `Another start is already in progress (lock held)` | Parallel start, lock file held | Wait 30s. If persists: `echo 'Inspect lock owner first; do not remove active lock files'` |
 | `ERROR: Failed to start Xray services` | xray-core or tun2socks crashed on start | Check `/var/log/xray-core.log` for details |
 | `No config found in config.xml` | GUI fields empty | Import VLESS link or fill fields manually → Apply |
 
@@ -312,7 +335,7 @@ configctl xray status
 # GUI → General → Enable Xray ✓ → Apply
 
 # Validate config separately:
-/usr/local/bin/xray-core -test -c /usr/local/etc/xray-core/config.json
+/usr/local/bin/xray-core -test -c /usr/local/etc/xray-core/config-<INSTANCE_UUID>.json
 ```
 
 ---
@@ -330,9 +353,9 @@ ls -la /usr/local/etc/rc.syshook.d/start/50-xray
 ls -la /usr/local/etc/inc/plugins.inc.d/xray.inc
 
 # 3. Check if stopped flag is set (prevents auto-start)
-ls -la /var/run/xray_stopped.flag
+ls -la /var/run/xray_stopped_<INSTANCE_UUID>.flag
 # If present, remove it:
-rm -f /var/run/xray_stopped.flag
+echo 'Do not remove intentional stop flags; use Enable and Start in GUI'
 
 # 4. Start manually
 configctl xray start
@@ -350,14 +373,14 @@ service configd status
 service configd start
 
 # 3. Check for stuck lock file
-ls -la /var/run/xray_start.lock
+ls -la /var/run/xray_start_<INSTANCE_UUID>.lock
 # If older than 1 minute:
-rm -f /var/run/xray_start.lock
+echo 'Inspect lock owner first; do not remove active lock files'
 
 # 4. Check for stuck PHP process
 ps aux | grep xray-service-control
 # Kill if older than 2 minutes:
-kill <PID>
+echo 'Inspect process and parent first; do not kill an active controller'
 
 # 5. Restart configd and retry
 service configd restart
@@ -433,7 +456,7 @@ netstat -rn | grep proxytun
 ```sh
 # Config not applying in custom mode
 # 1. Verify config_mode is set to "custom":
-cat /usr/local/etc/xray-core/config.json | head -5
+cat /usr/local/etc/xray-core/config-<INSTANCE_UUID>.json | head -5
 
 # 2. Validate JSON syntax:
 echo '<paste your json>' | python3 -m json.tool
@@ -513,9 +536,9 @@ tail -50 /var/log/xray-core.log | grep -i reality
 # GUI → General → Enable Watchdog ✓
 
 # 2. Is intentional stop flag set?
-ls -la /var/run/xray_stopped.flag
+ls -la /var/run/xray_stopped_<INSTANCE_UUID>.flag
 # If present — watchdog intentionally ignores. Remove to allow restart:
-rm -f /var/run/xray_stopped.flag
+echo 'Do not remove intentional stop flags; use Enable and Start in GUI'
 
 # 3. Is cron running watchdog?
 crontab -l | grep xray
@@ -528,7 +551,7 @@ tail -30 /var/log/xray-watchdog.log
 # Watchdog keeps restarting (restart loop)
 # Root cause: xray-core or tun2socks crash immediately after start
 # Fix the underlying issue first:
-/usr/local/bin/xray-core -test -c /usr/local/etc/xray-core/config.json
+/usr/local/bin/xray-core -test -c /usr/local/etc/xray-core/config-<INSTANCE_UUID>.json
 # Fix config, then watchdog will succeed
 ```
 
@@ -593,7 +616,7 @@ ls -la /usr/local/tun2socks/
 # Directories should be drwxr-x--- (0750)
 
 # Fix permissions:
-chmod 0640 /usr/local/etc/xray-core/config.json
+chmod 0640 /usr/local/etc/xray-core/config-<INSTANCE_UUID>.json
 chmod 0750 /usr/local/etc/xray-core/
 
 # Binary not executable
@@ -621,7 +644,7 @@ ps aux | grep -E 'xray-core|tun2socks' | grep -v grep
 # If more than one of each — kill all and restart cleanly:
 pkill -f xray-core
 pkill -f tun2socks
-rm -f /var/run/xray_core.pid /var/run/tun2socks.pid /var/run/xray_start.lock
+rm -f /var/run/xray_core.pid /var/run/tun2socks.pid /var/run/xray_start_<INSTANCE_UUID>.lock
 sleep 1
 configctl xray start
 
@@ -768,8 +791,8 @@ sh install.sh
 # Nuclear option — clean everything and start fresh
 configctl xray stop
 rm -f /var/run/xray_*.pid /var/run/xray_*.lock /var/run/xray_*.flag
-rm -f /usr/local/etc/xray-core/config.json
-rm -f /usr/local/tun2socks/config.yaml
+rm -f /usr/local/etc/xray-core/config-<INSTANCE_UUID>.json
+rm -f /usr/local/tun2socks/config-<INSTANCE_UUID>.yaml
 sh install.sh uninstall
 sh install.sh
 # Then re-import VLESS link and Apply
