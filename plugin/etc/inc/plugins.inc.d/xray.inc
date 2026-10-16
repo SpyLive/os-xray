@@ -61,13 +61,21 @@ function xray_configure_do(bool $verbose = false): void
         $tun = (string)($entry->tun_interface ?? 'proxytun2socks0');
         $listen = (string)($entry->socks5_listen ?? '127.0.0.1');
         $port = (string)($entry->socks5_port ?? '10808');
-        $sock = $listen . ':' . $port;
-        if (isset($enabledTuns[$tun]) || isset($enabledSocks[$sock])) {
-            error_log("xray boot: enabled profiles conflict on TUN {$tun} or SOCKS {$sock}; refusing startup");
+        if (isset($enabledTuns[$tun])) {
+            error_log("xray boot: enabled profiles share TUN {$tun}; refusing startup");
             return;
         }
+        foreach ($enabledSocks as $previous) {
+            if ($port === $previous['port'] &&
+                ($listen === $previous['listen'] ||
+                 $listen === '0.0.0.0' || $previous['listen'] === '0.0.0.0' ||
+                 $listen === '::' || $previous['listen'] === '::')) {
+                error_log("xray boot: conflicting enabled SOCKS listeners; refusing startup");
+                return;
+            }
+        }
         $enabledTuns[$tun] = $uuid;
-        $enabledSocks[$sock] = $uuid;
+        $enabledSocks[] = ['listen' => $listen, 'port' => $port];
     }
 
     // Share the runtime mutation lock with Apply/Stop/Restart/watchdog.
