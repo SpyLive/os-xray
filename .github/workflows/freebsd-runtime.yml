@@ -48,3 +48,11 @@ jobs:
             chmod +x "$T2S"
             python3.11 tests/freebsd_native_tun_integration.py "$T2S"
             python3.11 tests/freebsd_packet_path_integration.py "$T2S"
+            # Use exactly the installer-pinned Xray-core release and checksum.
+            fetch -o /tmp/xray-freebsd-64.zip https://github.com/XTLS/Xray-core/releases/download/v26.3.27/Xray-freebsd-64.zip
+            test "$(sha256 -q /tmp/xray-freebsd-64.zip)" = "c0fcd6962fc8a382e14441370ddbdb6a56e7108c73e817938c626770ac4a1358"
+            mkdir -p /tmp/xray-core-bin
+            unzip -oq /tmp/xray-freebsd-64.zip -d /tmp/xray-core-bin
+            test -f /tmp/xray-core-bin/xray
+            chmod +x /tmp/xray-core-bin/xray
+            python3.11 tests/freebsd_xray_core_integration.py "$T2S" /tmp/xray-core-bin/xray
