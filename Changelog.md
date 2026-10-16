@@ -9,6 +9,7 @@
 - Watchdog is registered using the OPNsense `autocron` hook and was confirmed running once per minute.
 - Added `upgrade.sh` for an existing 3.x installation to back up configuration and plugin files, update plugin code and reload configd/cron without stopping VPN processes or running a config migration.
 - Reviewed English/Russian upgrade and troubleshooting instructions, including per-instance runtime file names.
+- Pre-upgrade instructions now require a controlled OPNsense reboot and verification of healthy VPN/TUN before running `upgrade.sh`; upgrading from a stuck-TUN state following Apply on an older plugin was not tested.
 
 **Validation:** real OPNsense 26.7.4_1 / FreeBSD 15.1: Apply, Stop/Start, A/C/D switching, common-TUN conflict, watchdog cron and conflict error message tested. Forced-crash recovery and VPN traffic health checks have not been tested. Use a Proxmox/OPNsense backup before upgrade.
 
