@@ -280,7 +280,7 @@ function tun_owner_pid(string $iface): int
     $lines = [];
     exec('/sbin/ifconfig ' . escapeshellarg($iface) . ' 2>/dev/null', $lines, $rc);
     if ($rc !== 0) return 0; // interface absent
-    if (preg_match('/Opened by PID\\s+(\\d+)/', implode("\\n", $lines), $m)) return (int)$m[1];
+    if (preg_match('/Opened by PID\s+(\d+)/', implode("\n", $lines), $m)) return (int)$m[1];
     return 0; // interface may exist without an open NativeTun handle
 }
 
@@ -334,8 +334,10 @@ function proc_kill(string $pidfile): bool
     }
     $comm = trim((string)shell_exec('ps -o comm= -p ' . $pid . ' 2>/dev/null'));
     if ($comm === '' || (strpos($comm, 'xray') === false && strpos($comm, 'tun2socks') === false)) {
-        echo "ERROR: PID {$pid} is not an expected Xray process; refusing unsafe stop.\n";
-        return false;
+        // PID reuse: leave the unrelated process untouched, forget the stale file.
+        echo "WARNING: stale PID file {$pidfile} points to an unrelated process.\n";
+        @unlink($pidfile);
+        return true;
     }
     exec('/bin/kill -TERM ' . $pid . ' 2>/dev/null');
     for ($i = 0; $i < 30; $i++) {
@@ -479,6 +481,14 @@ function do_stop(string $inst_uuid, ?string $tunIface = null): bool
     // Never explicitly destroy an OPNsense-assigned TUN here.  tun2socks owns
     // its FreeBSD NativeTun handle; destroying the interface while that handle
     // remains open can block forever inside kernel tun_destroy (FreeBSD 15.1).
+    // A disabled profile sharing this TUN must never stop its active owner.
+    if (!proc_is_running(t2s_pid_path($inst_uuid))
+        && !proc_is_running(xray_pid_path($inst_uuid))) {
+        @unlink(xray_applied_hash_path($inst_uuid));
+        file_put_contents(xray_stopped_flag($inst_uuid), date('Y-m-d H:i:s'));
+        echo "Already stopped.\n";
+        return true;
+    }
     $ownerBefore = tun_owner_pid($tunIface);
     if ($ownerBefore > 0 && !tun_owned_by_instance($tunIface, $inst_uuid)) {
         echo "ERROR: TUN {$tunIface} belongs to a different instance (PID {$ownerBefore}).\n";
