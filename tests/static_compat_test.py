@@ -47,6 +47,9 @@ assert 'if [ "$TUN_ONLY" = "--tun-only" ]; then' in boot_hook
 assert 'setup_instance "$INST_UUID"' in boot_hook
 assert "    exit $?" in boot_hook
 assert "    ifconfig \"$TUN_IFACE\" inet \"$TUN_IP\" 2>&1 || return 1" in boot_hook
+# OPNsense cron plugin hooks need ['autocron' => [command, minute]] entries.
+assert "['autocron' => ['/usr/local/sbin/configctl -d xray watchdog', '*']]" in boot
+assert "['xray_cron_watchdog', '/', '*', '*', '*', '*']" not in boot
 # Regression: FreeBSD tun_destroy may block while tun2socks still owns /dev/tun.
 assert "tun_destroy($tunIface);" not in svc
 assert 'proc_is_running(t2s_pid_path($uuid)) || proc_is_running(xray_pid_path($uuid))' in svc
