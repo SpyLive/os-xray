@@ -71,6 +71,11 @@ foreach ($instances->instance as $inst) {
         continue;
     }
 
+    // Disabled profiles must never be restarted by the watchdog.
+    if ((string)($inst->enabled ?? '0') !== '1') {
+        continue;
+    }
+
     $name = (string)($inst->name ?? $inst_uuid);
 
     // БАГ-5 FIX: если инстанс намеренно остановлен — не трогаем

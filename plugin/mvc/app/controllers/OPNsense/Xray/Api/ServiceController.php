@@ -32,7 +32,7 @@ class ServiceController extends ApiMutableServiceControllerBase
     public function reconfigureAction($uuid = '')
     {
         if (!$this->request->isPost()) {
-            return ['result' => 'failed', 'message' => 'POST required'];
+            return ['status' => 'failed', 'status_msg' => 'POST required'];
         }
 
         $uuid    = $this->sanitizeUuid((string)$uuid);
@@ -41,7 +41,7 @@ class ServiceController extends ApiMutableServiceControllerBase
         $output  = trim($backend->configdRun($cmd));
 
         if (empty($output)) {
-            return ['result' => 'failed', 'message' => 'No response from configd (timeout or service unavailable)'];
+            return ['status' => 'failed', 'status_msg' => 'No response from configd (timeout or service unavailable)'];
         }
 
         $hasError   = stripos($output, 'ERROR')   !== false
@@ -50,10 +50,10 @@ class ServiceController extends ApiMutableServiceControllerBase
                    || stripos($output, 'disabled') !== false;
 
         if ($hasError || !$hasSuccess) {
-            return ['result' => 'failed', 'message' => $output];
+            return ['status' => 'failed', 'status_msg' => $output];
         }
 
-        return ['result' => 'ok', 'message' => $output];
+        return ['status' => 'ok', 'status_msg' => $output];
     }
 
     public function statusAction($uuid = '')
@@ -111,7 +111,7 @@ class ServiceController extends ApiMutableServiceControllerBase
         $backend = new Backend();
         $output  = trim($backend->configdRun($cmd));
         return [
-            'result'  => empty($output) ? 'failed' : 'ok',
+            'result'  => (empty($output) || stripos($output, 'ERROR') !== false || stripos($output, 'failed') !== false) ? 'failed' : 'ok',
             'message' => $output ?: 'No response from configd',
         ];
     }

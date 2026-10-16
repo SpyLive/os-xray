@@ -1,3 +1,22 @@
+## [3.1.3] — 2026-10-16
+
+### OPNsense 26.7 / FreeBSD 15.1 live-tested fixes
+
+- NativeTun stop/start avoids destroying an interface still owned by tun2socks; Apply does not restart an unchanged instance.
+- TUN IPv4 address and UP state are assigned synchronously before reporting Apply success.
+- Multiple Enabled profiles using the same TUN (or a conflicting SOCKS listener) are rejected before stopping the working tunnel.
+- Apply errors are returned through configd (`errors:no`) and displayed by the GUI instead of a misleading timeout.
+- Watchdog is registered using the OPNsense `autocron` hook and was confirmed running once per minute.
+- Added `upgrade.sh` for an existing 3.x installation to back up configuration and plugin files, update plugin code and reload configd/cron without stopping VPN processes or running a config migration.
+- Reviewed English/Russian upgrade and troubleshooting instructions, including per-instance runtime file names.
+- Pre-upgrade instructions now require a controlled OPNsense reboot and verification of healthy VPN/TUN before running `upgrade.sh`; upgrading from a stuck-TUN state following Apply on an older plugin was not tested.
+
+**Validation:** real OPNsense 26.7.4_1 / FreeBSD 15.1: Apply, Stop/Start, A/C/D switching, common-TUN conflict, watchdog cron and conflict error message tested. Forced-crash recovery and VPN traffic health checks have not been tested. Use a Proxmox/OPNsense backup before upgrade.
+
+**VM 109 upgrade/rollback test (2026-10-16):** restored VM 100 backup to temporary Proxmox VM 109; verified 3.1.1 → 3.1.3, repeated 3.1.3 → 3.1.3, rollback 3.1.3 → 3.1.1 from upgrade backup, then return 3.1.1 → 3.1.3. Across these updater/rollback operations, active Xray/tun2socks PIDs and the SHA-256 of `/conf/config.xml` remained unchanged. Watchdog cron registered after upgrade. **First Apply after the original 3.1.1 → 3.1.3 upgrade did restart both VPN processes; subsequent unchanged Apply did not.** Reason for first restart not proven. Plan for VPN interruption on initial Apply; updater itself does not invoke Apply. Tests do not establish universal rollback safety for files introduced in future versions.
+
+---
+
 ## [3.1.0] — 2026-09-23
 
 ### SpyLive fork — OPNsense 26.7 / FreeBSD 15.1 stabilization

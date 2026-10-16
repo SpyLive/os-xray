@@ -8,7 +8,7 @@
 [![OPNsense](https://img.shields.io/badge/OPNsense-26.7.x-blue)](https://opnsense.org)
 [![FreeBSD](https://img.shields.io/badge/FreeBSD-15.1%20amd64-red)](https://freebsd.org)
 
-**Xray-core VPN plugin for OPNsense** — форк совместимости SpyLive v3.1.0
+**Xray-core VPN plugin for OPNsense** — форк совместимости SpyLive v3.1.3
 
 Xray-core + tun2socks — нативный VPN-клиент для OPNsense с поддержкой селективной маршрутизации. Интеграция Xray outbound + tun2socks для policy routing в OPNsense. VLESS-ссылку можно импортировать в JSON-объект outbound или отредактировать outbound вручную.
 
@@ -16,7 +16,7 @@ Xray-core + tun2socks — нативный VPN-клиент для OPNsense с �
 
 ## Возможности
 
-- **Мульти-инстанс** — несколько VPN-подключений одновременно, каждое с отдельным конфигом, портом и TUN-интерфейсом
+- **Мульти-инстанс** — несколько сохранённых профилей VPN с отдельными настройками; одновременно может работать только один профиль на общем TUN-интерфейсе
 - **Per-instance статус** — таблица инстансов показывает статус xray-core и tun2socks для каждого подключения (обновление каждые 5 секунд)
 - **Импорт VLESS-ссылки** прямо в диалоге — преобразует ссылку в Xray outbound object, включая transport streamSettings (xhttp, ws, grpc, h2, kcp, если они присутствуют); backend сам добавляет SOCKS inbound и routing
 - Импорт VLESS+REALITY использует актуальный flat-синтаксис Xray 26.x и сохраняет чтение legacy vnext; REALITY совместим с password/publicKey
@@ -96,6 +96,33 @@ sh install.sh
 ```sh
 configctl xray version
 ```
+
+---
+
+## Обновление установленной версии 3.x без потери настроек
+
+**Для штатного обновления работающего маршрутизатора не запускайте `install.sh`.** Он дополнительно выполняет импорт первоначальной конфигурации, миграции старых версий, проверку бинарников и очистку старых PID. Для обновления уже установленной версии 3.x предусмотрен отдельный `upgrade.sh` из проверенного коммита **`main` или релизного тега**, а не из изменяющейся ветки `develop`.
+
+**Обязательное условие перед обновлением:** выполните **штатную перезагрузку OPNsense до запуска `upgrade.sh`**, предварительно сохранив резервную копию и обеспечив доступ к консоли Proxmox. Дождитесь окончания загрузки и проверьте работающий профиль VPN и состояние TUN (`configctl xray statusall`, `ifconfig proxytun2socks0`). **Не запускайте обновление при заблокированном или зависшем TUN после Apply старой версии:** такой сценарий не проверялся. Перезагрузка — мера предосторожности, а не доказательство устранения любой возможной неисправности TUN. Поскольку перезагрузка прервёт VPN, заранее предусмотрите независимый доступ к управлению. Если после перезагрузки VPN/TUN не восстановились, сначала выясните причину, а не обновляйте вслепую.
+
+Перед обновлением создайте резервную копию OPNsense/Proxmox и убедитесь, что есть доступ к локальной консоли или альтернативный маршрут управления. Скрипт сохраняет `/conf/config.xml` и файлы плагина в `/root/os-xray-upgrade-YYYYMMDD-HHMMSS/`, заменяет только файлы плагина, **не трогает бинарники и работающие процессы Xray/tun2socks**, перезапускает только `configd`, пересоздаёт расписание cron. Apply автоматически не выполняется. Обновление с 1.x/2.x требует отдельного плана миграции.
+
+```sh
+cd /root
+git clone --branch main https://github.com/SpyLive/os-xray.git os-xray-main
+cd os-xray-main
+git rev-parse HEAD              # проверить коммит релиза
+sh upgrade.sh
+configctl xray statusall
+ifconfig proxytun2socks0
+crontab -l | grep 'xray watchdog'
+```
+
+Для следующих обновлений в этом каталоге: `git fetch origin main && git checkout main && git pull --ff-only`, проверить коммит и примечания к версии, затем `sh upgrade.sh`. Нельзя использовать `sh install.sh uninstall` для обновления: команда удаляет файлы и останавливает VPN. При ошибке проверки восстанавливайте файлы из резервной копии через консоль, а не перезапускайте VPN наугад.
+
+**Проверено на VM 109 (16.10.2026):** обновление `3.1.1 → 3.1.3` и повторное `3.1.3 → 3.1.3` сохранили PID активного Xray/tun2socks и SHA-256 `/conf/config.xml`. Однако **первый Apply после перехода с 3.1.1 перезапустил оба процесса** (`Stopped. Started. OK`); следующий Apply без изменений уже не перезапускал их. Причина первого перезапуска не установлена. Планируйте первый Apply как операцию, способную кратковременно прервать VPN.
+
+**Общий TUN:** несколько профилей можно хранить одновременно, но с интерфейсом `proxytun2socks0` одновременно разрешён (Enable) только один. При конфликте Apply отвергает изменения **до остановки** работающего инстанса. Кнопка Start не запускает профиль без Enable.
 
 ---
 
@@ -193,7 +220,7 @@ Watchdog не перезапускает сервис если он был ос�
 ## Удаление
 
 ```sh
-cd /tmp/os-xray-v5
+cd /root/os-xray-main
 sh install.sh uninstall
 ```
 
@@ -252,7 +279,7 @@ ls /usr/local/tun2socks/config-*.yaml
 | `xray-core not found at /usr/local/bin/xray-core` | Бинарник не установлен | Установить xray-core (см. раздел ниже) |
 | `tun2socks not found at /usr/local/tun2socks/tun2socks` | Бинарник не установлен | Установить tun2socks (см. ниже) |
 | `Xray is disabled in config` | Не включён Enable | GUI → General → Enable Xray ✓ → Apply |
-| `Another start is already in progress (lock held)` | Параллельный запуск, lock занят | Подождать 30с. Если не проходит: `rm -f /var/run/xray_start.lock` |
+| `Another start is already in progress (lock held)` | Параллельный запуск, lock занят | Подождать 30с. Если не проходит: `echo 'Inspect lock owner first; do not remove active lock files'` |
 | `ERROR: Failed to start Xray services` | xray-core или tun2socks упал при старте | Смотри `/var/log/xray-core.log` |
 | `No config found in config.xml` | Поля GUI пустые | Импортировать VLESS-ссылку или заполнить поля → Apply |
 
@@ -312,7 +339,7 @@ configctl xray status
 # GUI → General → Enable Xray ✓ → Apply
 
 # Валидация конфига отдельно:
-/usr/local/bin/xray-core -test -c /usr/local/etc/xray-core/config.json
+/usr/local/bin/xray-core -test -c /usr/local/etc/xray-core/config-<INSTANCE_UUID>.json
 ```
 
 ---
@@ -330,9 +357,9 @@ ls -la /usr/local/etc/rc.syshook.d/start/50-xray
 ls -la /usr/local/etc/inc/plugins.inc.d/xray.inc
 
 # 3. Проверить флаг намеренной остановки
-ls -la /var/run/xray_stopped.flag
+ls -la /var/run/xray_stopped_<INSTANCE_UUID>.flag
 # Если есть — удалить:
-rm -f /var/run/xray_stopped.flag
+echo 'Do not remove intentional stop flags; use Enable and Start in GUI'
 
 # 4. Запустить вручную
 configctl xray start
@@ -350,14 +377,14 @@ service configd status
 service configd start
 
 # 3. Проверить lock-файл
-ls -la /var/run/xray_start.lock
+ls -la /var/run/xray_start_<INSTANCE_UUID>.lock
 # Если старше 1 минуты:
-rm -f /var/run/xray_start.lock
+echo 'Inspect lock owner first; do not remove active lock files'
 
 # 4. Проверить зависший PHP-процесс
 ps aux | grep xray-service-control
 # Если старше 2 минут:
-kill <PID>
+echo 'Inspect process and parent first; do not kill an active controller'
 
 # 5. Перезапустить configd
 service configd restart
@@ -433,7 +460,7 @@ netstat -rn | grep proxytun
 ```sh
 # Конфиг не применяется в custom-режиме
 # 1. Проверить что config_mode = custom:
-cat /usr/local/etc/xray-core/config.json | head -5
+cat /usr/local/etc/xray-core/config-<INSTANCE_UUID>.json | head -5
 
 # 2. Проверить синтаксис JSON:
 echo '<ваш json>' | python3 -m json.tool
@@ -513,9 +540,9 @@ tail -50 /var/log/xray-core.log | grep -i reality
 # GUI → General → Enable Watchdog ✓
 
 # 2. Флаг намеренной остановки?
-ls -la /var/run/xray_stopped.flag
+ls -la /var/run/xray_stopped_<INSTANCE_UUID>.flag
 # Если есть — watchdog намеренно игнорирует. Удалить:
-rm -f /var/run/xray_stopped.flag
+echo 'Do not remove intentional stop flags; use Enable and Start in GUI'
 
 # 3. Cron запускает watchdog?
 crontab -l | grep xray
@@ -528,7 +555,7 @@ tail -30 /var/log/xray-watchdog.log
 # Watchdog в цикле перезапусков
 # Причина: xray-core или tun2socks падает сразу после старта
 # Сначала исправь причину:
-/usr/local/bin/xray-core -test -c /usr/local/etc/xray-core/config.json
+/usr/local/bin/xray-core -test -c /usr/local/etc/xray-core/config-<INSTANCE_UUID>.json
 # Исправь конфиг — после этого watchdog заработает
 ```
 
@@ -593,7 +620,7 @@ ls -la /usr/local/tun2socks/
 # Директории: drwxr-x--- (0750)
 
 # Исправить права:
-chmod 0640 /usr/local/etc/xray-core/config.json
+chmod 0640 /usr/local/etc/xray-core/config-<INSTANCE_UUID>.json
 chmod 0750 /usr/local/etc/xray-core/
 
 # Бинарник не исполняемый
@@ -612,26 +639,15 @@ service configd restart
 
 ---
 
-### Зомби-процессы
+### Неожиданные процессы и устаревшие PID
+
+**Не используйте массовый `pkill` и не удаляйте все PID/lock-файлы на работающем маршрутизаторе.** Так можно прервать активный профиль. Установите владельца процесса; штатный Stop/Start допускается только при наличии независимого пути управления.
 
 ```sh
-# Несколько процессов xray-core или tun2socks
-ps aux | grep -E 'xray-core|tun2socks' | grep -v grep
-
-# Если больше одного — убить все и перезапустить:
-pkill -f xray-core
-pkill -f tun2socks
-rm -f /var/run/xray_core_*.pid /var/run/tun2socks_*.pid /var/run/xray_start.lock
-sleep 1
-configctl xray start
-
-# PID-файл есть, но процесс мёртв (v3.0.0: PID-файлы per-instance)
-ls /var/run/xray_core_*.pid
-# Проверить каждый PID:
-cat /var/run/xray_core_*.pid
-# Если "No such process" — устаревший PID-файл
-rm -f /var/run/xray_core_*.pid /var/run/tun2socks_*.pid
-configctl xray start
+configctl xray statusall
+ps -axww -o pid,ppid,stat,command | grep -E '[x]ray-core|[t]un2socks'
+ls -l /var/run/xray_core_*.pid /var/run/tun2socks_*.pid 2>/dev/null
+ifconfig proxytun2socks0
 ```
 
 ---
@@ -758,22 +774,10 @@ tail -f /var/log/xray-core.log        # мониторинг лога в реа�
 
 ---
 
-### Сброс и переустановка
+### Восстановление и переустановка
 
-```sh
-# Полная переустановка без потери конфига OPNsense
-sh install.sh uninstall
-sh install.sh
+Для штатного обновления 3.x используйте `sh upgrade.sh` (см. выше). **Не удаляйте плагин, runtime-флаги или сгенерированные конфиги** как способ обновления. Для миграции старых версий или восстановления сначала создайте снимок Proxmox и копию `/conf/config.xml`, затем выполняйте процедуру через независимую консоль.
 
-# Ядерный вариант — очистить всё и начать с нуля
-configctl xray stop
-rm -f /var/run/xray_*.pid /var/run/xray_*.lock /var/run/xray_*.flag
-rm -f /usr/local/etc/xray-core/config.json
-rm -f /usr/local/tun2socks/config.yaml
-sh install.sh uninstall
-sh install.sh
-# Затем заново импортировать VLESS-ссылку и Apply
-```
 
 ---
 

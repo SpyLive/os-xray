@@ -1,0 +1,58 @@
+name: FreeBSD 15.1 runtime regression checks
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  freebsd-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test in isolated FreeBSD 15.1 VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: "15.1"
+          usesh: true
+          prepare: |
+            pkg install -y php84 python311 unzip ca_root_nss
+          run: |
+            set -eu
+            uname -a
+            freebsd-version
+            php -v
+            python3.11 --version
+            find plugin -type f -name '*.php' -exec php -l {} \;
+            python3.11 tests/static_compat_test.py
+            python3.11 tests/behavioral_stop_test.py
+            python3.11 tests/behavioral_actions_test.py
+            python3.11 tests/behavioral_lock_test.py
+            python3.11 tests/behavioral_socks_test.py
+            # Read-only kernel TUN capability probe; do not destroy devices
+            # or change the default interface/routing configuration.
+            ifconfig -l
+            test -c /dev/tun || test -c /dev/tun0 || true
+            echo "FreeBSD 15.1 VM regression suite: OK"
+            # Download exactly the pinned tun2socks 2.7.0 FreeBSD build.
+            fetch -o /tmp/tun2socks-freebsd-amd64.zip https://github.com/xjasonlyu/tun2socks/releases/download/v2.7.0/tun2socks-freebsd-amd64.zip
+            test "$(sha256 -q /tmp/tun2socks-freebsd-amd64.zip)" = "3ebb747aa83ee3157330beb324bbeaf9a742db6a8d24b9bbc96a4125aaeeeaea"
+            mkdir -p /tmp/xray-tun-bin
+            unzip -oq /tmp/tun2socks-freebsd-amd64.zip -d /tmp/xray-tun-bin
+            T2S=$(find /tmp/xray-tun-bin -type f -name 'tun2socks-freebsd-amd64*' | head -1)
+            test -n "$T2S"
+            chmod +x "$T2S"
+            python3.11 tests/freebsd_native_tun_integration.py "$T2S"
+            python3.11 tests/freebsd_packet_path_integration.py "$T2S"
+            # Use exactly the installer-pinned Xray-core release and checksum.
+            fetch -o /tmp/xray-freebsd-64.zip https://github.com/XTLS/Xray-core/releases/download/v26.3.27/Xray-freebsd-64.zip
+            test "$(sha256 -q /tmp/xray-freebsd-64.zip)" = "c0fcd6962fc8a382e14441370ddbdb6a56e7108c73e817938c626770ac4a1358"
+            mkdir -p /tmp/xray-core-bin
+            unzip -oq /tmp/xray-freebsd-64.zip -d /tmp/xray-core-bin
+            test -f /tmp/xray-core-bin/xray
+            chmod +x /tmp/xray-core-bin/xray
+            python3.11 tests/freebsd_xray_core_integration.py "$T2S" /tmp/xray-core-bin/xray

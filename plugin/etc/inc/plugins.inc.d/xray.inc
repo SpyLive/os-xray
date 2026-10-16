@@ -50,6 +50,43 @@ function xray_configure_do(bool $verbose = false): void
         return;
     }
 
+    // Validate shared resources before starting any service. Multiple stored
+    // profiles may share a TUN, but no two enabled profiles may claim it.
+    $enabledTuns = [];
+    $enabledSocks = [];
+    foreach ($instances->instance as $entry) {
+        $uuid = (string)$entry['uuid'];
+        if (!xray_valid_instance_uuid_boot($uuid)
+            || (string)($entry->enabled ?? '1') !== '1') continue;
+        $tun = (string)($entry->tun_interface ?? 'proxytun2socks0');
+        $listen = (string)($entry->socks5_listen ?? '127.0.0.1');
+        $port = (string)($entry->socks5_port ?? '10808');
+        if (isset($enabledTuns[$tun])) {
+            error_log("xray boot: enabled profiles share TUN {$tun}; refusing startup");
+            return;
+        }
+        foreach ($enabledSocks as $previous) {
+            if ($port === $previous['port'] &&
+                ($listen === $previous['listen'] ||
+                 $listen === '0.0.0.0' || $previous['listen'] === '0.0.0.0' ||
+                 $listen === '::' || $previous['listen'] === '::')) {
+                error_log("xray boot: conflicting enabled SOCKS listeners; refusing startup");
+                return;
+            }
+        }
+        $enabledTuns[$tun] = $uuid;
+        $enabledSocks[] = ['listen' => $listen, 'port' => $port];
+    }
+
+    // Share the runtime mutation lock with Apply/Stop/Restart/watchdog.
+    $operationLock = fopen('/var/run/xray_service_operation.lock', 'ce');
+    if ($operationLock === false || !flock($operationLock, LOCK_EX | LOCK_NB)) {
+        error_log('xray boot: another service operation holds the shared lock; skipping');
+        if ($operationLock !== false) fclose($operationLock);
+        return;
+    }
+
+    try {
     foreach ($instances->instance as $inst) {
         $inst_uuid = (string)$inst['uuid'];
         if (!xray_valid_instance_uuid_boot($inst_uuid)
@@ -181,6 +218,11 @@ function xray_configure_do(bool $verbose = false): void
         }
     }
 
+    } finally {
+        flock($operationLock, LOCK_UN);
+        fclose($operationLock);
+    }
+
     // reload firewall/routing — выполняется всегда
     @include_once('filter.inc');
     @include_once('interfaces.inc');
@@ -239,8 +281,11 @@ function xray_services()
  */
 function xray_cron(): array
 {
+    // OPNsense plugins_cron() expects each entry to contain an 'autocron'
+    // tuple: [shell command, minute, hour, day, month, weekday].
+    // A bare positional tuple is ignored by system_cron_configure().
     return [
-        ['xray_cron_watchdog', '/', '*', '*', '*', '*'],
+        ['autocron' => ['/usr/local/sbin/configctl -d xray watchdog', '*']],
     ];
 }
 

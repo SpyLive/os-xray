@@ -21,6 +21,7 @@ T2S_BIN="/usr/local/tun2socks/tun2socks"
 # v3.0.0: первый аргумент — inst_uuid конкретного инстанса (опционально)
 # Если не задан — обрабатываем все инстансы из config.xml
 INST_UUID="${1:-}"
+TUN_ONLY="${2:-}"
 
 valid_inst_uuid() {
     printf '%s\n' "$1" | grep -Eq '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'
@@ -46,7 +47,7 @@ setup_instance() {
     # BUG-8 FIX: ожидаем per-instance lock
     _XRAY_LOCK="/var/run/xray_start_${_INST_UUID}.lock"
     _lock_tries=0
-    while [ -f "$_XRAY_LOCK" ] && [ $_lock_tries -lt 10 ]; do
+    while [ "$TUN_ONLY" != "--tun-only" ] && [ -f "$_XRAY_LOCK" ] && [ $_lock_tries -lt 10 ]; do
         echo "  [${_INST_UUID}] waiting for lock (${_lock_tries}s)..."
         sleep 1
         _lock_tries=$((_lock_tries+1))
@@ -88,10 +89,10 @@ setup_instance() {
         echo "  ${i}s..."
     done
 
-    ifconfig "$TUN_IFACE" > /dev/null 2>&1 || { echo "[${_INST_UUID}] interface $TUN_IFACE not found after 10s!"; return 0; }
+    ifconfig "$TUN_IFACE" > /dev/null 2>&1 || { echo "[${_INST_UUID}] interface $TUN_IFACE not found after 10s!"; return 1; }
 
     # Поднимаем интерфейс и назначаем MTU
-    ifconfig "$TUN_IFACE" mtu "$MTU" up 2>&1
+    ifconfig "$TUN_IFACE" mtu "$MTU" up 2>&1 || return 1
 
     # Назначаем IP из OPNsense interfaces (BUG-2 FIX: через env)
     TUN_IP=$(_TUN_IFACE="$TUN_IFACE" php -r '
@@ -110,11 +111,19 @@ setup_instance() {
 
     if [ -n "$TUN_IP" ]; then
         echo "[${_INST_UUID}] assigning $TUN_IP to $TUN_IFACE..."
-        ifconfig "$TUN_IFACE" inet "$TUN_IP" 2>&1
+        ifconfig "$TUN_IFACE" inet "$TUN_IP" 2>&1 || return 1
     else
-        echo "[${_INST_UUID}] WARNING: no IP found in config, skipping IP assignment"
+        echo "[${_INST_UUID}] ERROR: no IP found in config"
+        return 1
     fi
+    return 0
 }
+
+if [ "$TUN_ONLY" = "--tun-only" ]; then
+    [ -n "$INST_UUID" ] && valid_inst_uuid "$INST_UUID" || exit 1
+    setup_instance "$INST_UUID"
+    exit $?
+fi
 
 if [ -n "$INST_UUID" ]; then
     # Обрабатываем конкретный инстанс
