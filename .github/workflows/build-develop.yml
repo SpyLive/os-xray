@@ -6,7 +6,7 @@ on:
       - develop
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -74,40 +74,3 @@ jobs:
           echo "  Versioned archive: ${{ env.ARCHIVE_NAME_VER }}.tar.gz"
           ls -lh "${{ env.ARCHIVE_NAME }}.tar.gz"
           ls -lh "${{ env.ARCHIVE_NAME_VER }}.tar.gz"
-
-      - name: Generate changelog to release message
-        id: changelog
-        run: |
-          DOWNLOAD_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/develop-build/${ARCHIVE_NAME}.tar.gz"
-          DOWNLOAD_URL_VER="https://github.com/${GITHUB_REPOSITORY}/releases/download/develop-build/${ARCHIVE_NAME_VER}.tar.gz"
-
-          {
-            echo "BODY<<EOF"
-            echo ""
-            echo "---"
-            echo "### Manual installation"
-            echo '```sh'
-            echo "fetch -o /tmp/opnsense-xray.tar.gz ${DOWNLOAD_URL_VER}"
-            echo "cd /tmp && tar xzf opnsense-xray.tar.gz"
-            echo "cd opnsense-xray"
-            echo "chmod +x install.sh && sh install.sh"
-            echo '```'
-
-            echo "or non-versioned link ${DOWNLOAD_URL}"
-            
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: develop-build
-          name: "opnsense-xray (Develop branch)"
-          body: ${{ steps.changelog.outputs.BODY }}
-          draft: false
-          prerelease: true
-          files: |
-            ${{ env.ARCHIVE_NAME }}.tar.gz
-            ${{ env.ARCHIVE_NAME_VER }}.tar.gz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
