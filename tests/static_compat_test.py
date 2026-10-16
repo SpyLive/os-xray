@@ -90,7 +90,7 @@ assert "'address'    => $host" in imp
 assert "'vnext' => [[" not in imp
 assert "$settings['address']" in ctl and "$settings['vnext'][0]" in ctl
 assert "$settings['address']" in stats and "$settings['vnext'][0]['address']" in stats
-assert 'PLUGIN_VERSION="3.1.2"' in installer
+assert 'PLUGIN_VERSION="3.1.3"' in installer
 assert 'XRAY_VERSION="26.3.27"' in installer
 assert 'T2S_VERSION="2.7.0"' in installer
 assert 'XRAY_SHA256="c0fcd6962fc8a382e14441370ddbdb6a56e7108c73e817938c626770ac4a1358"' in installer
