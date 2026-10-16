@@ -305,6 +305,15 @@ function tun_wait_unowned(string $iface, int $oldOwner = 0): bool
     return false;
 }
 
+// A wildcard SOCKS listener conflicts with any specific listener on the same port.
+function xray_socks_conflict(string $listenA, int $portA, string $listenB, int $portB): bool
+{
+    if ($portA !== $portB) return false;
+    return $listenA === $listenB ||
+        $listenA === '0.0.0.0' || $listenB === '0.0.0.0' ||
+        $listenA === '::' || $listenB === '::';
+}
+
 // ─── PID helpers (FreeBSD: no posix extension — use /bin/kill) ───────────────
 function proc_is_running(string $pidfile): bool
 {
@@ -783,12 +792,14 @@ switch ($action) {
                 exit(1);
             }
             $enabledIfaces[$iface] = $uuid;
-            $sock = $c['socks5_listen'] . ':' . $c['socks5_port'];
-            if (isset($enabledSocks[$sock])) {
-                echo "ERROR: SOCKS {$sock} is enabled for multiple instances.\n";
-                exit(1);
+            foreach ($enabledSocks as $previous) {
+                if (xray_socks_conflict($c['socks5_listen'], (int)$c['socks5_port'],
+                    $previous['socks5_listen'], (int)$previous['socks5_port'])) {
+                    echo "ERROR: SOCKS listener conflict between {$uuid} and {$previous['inst_uuid']}.\n";
+                    exit(1);
+                }
             }
-            $enabledSocks[$sock] = $uuid;
+            $enabledSocks[] = $c;
         }
 
         $allStopped = [];
