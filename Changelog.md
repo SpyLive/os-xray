@@ -1,3 +1,19 @@
+## [3.1.3] — 2026-10-16
+
+### OPNsense 26.7 / FreeBSD 15.1 live-tested fixes
+
+- NativeTun stop/start avoids destroying an interface still owned by tun2socks; Apply does not restart an unchanged instance.
+- TUN IPv4 address and UP state are assigned synchronously before reporting Apply success.
+- Multiple Enabled profiles using the same TUN (or a conflicting SOCKS listener) are rejected before stopping the working tunnel.
+- Apply errors are returned through configd (`errors:no`) and displayed by the GUI instead of a misleading timeout.
+- Watchdog is registered using the OPNsense `autocron` hook and was confirmed running once per minute.
+- Added `upgrade.sh` for an existing 3.x installation to back up configuration and plugin files, update plugin code and reload configd/cron without stopping VPN processes or running a config migration.
+- Reviewed English/Russian upgrade and troubleshooting instructions, including per-instance runtime file names.
+
+**Validation:** real OPNsense 26.7.4_1 / FreeBSD 15.1: Apply, Stop/Start, A/C/D switching, common-TUN conflict, watchdog cron and conflict error message tested. Forced-crash recovery and VPN traffic health checks have not been tested. Use a Proxmox/OPNsense backup before upgrade.
+
+---
+
 ## [3.1.0] — 2026-09-23
 
 ### SpyLive fork — OPNsense 26.7 / FreeBSD 15.1 stabilization
