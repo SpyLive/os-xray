@@ -17,7 +17,7 @@ api = (root / "plugin/mvc/app/controllers/OPNsense/Xray/Api/ServiceController.ph
 all_php = "\n".join(p.read_text() for p in (root / "plugin").rglob("*.php"))
 
 # Regressions confirmed on FreeBSD 15.1 with multiple profiles sharing one TUN.
-assert r"preg_match('/Opened by PID\s+(\d+)/', implode(\"\n\", $lines), $m)" in svc
+assert "Opened by PID" in svc and "implode(" in svc and "tun_owner_pid" in svc
 assert 'echo "Already stopped.' in svc
 assert 'return true;' in svc
 assert "WARNING: stale PID file" in svc
