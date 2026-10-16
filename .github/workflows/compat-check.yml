@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Shell syntax
-        run: sh -n install.sh
+        run: sh -n install.sh && sh -n upgrade.sh
       - name: PHP syntax
         run: |
           find plugin -type f -name '*.php' -print0 | xargs -0 -n1 php -l
