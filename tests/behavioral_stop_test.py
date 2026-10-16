@@ -58,6 +58,16 @@ ob_start(); $ok = do_stop('C', 'proxytun2socks0'); ob_end_clean();
 verify($ok, 'Stop C should succeed');
 verify($events === ['t2s_C', 'wait', 'xray_C', 'alias'], 'Stop C sequencing');
 
+// A missing PID file does not mean an owning tun2socks has stopped.
+$alive = []; $owner = 71698; $owned = true; $events = [];
+ob_start(); $ok = do_stop('C', 'proxytun2socks0'); ob_end_clean();
+verify(!$ok && $events === [], 'Lost PID with live TUN owner must fail closed');
+
+// A disabled profile with no process must not affect another instance's TUN.
+$alive = []; $owner = 71698; $owned = false; $events = [];
+ob_start(); $ok = do_stop('A', 'proxytun2socks0'); ob_end_clean();
+verify($ok && $events === [], 'Foreign owner is safe for inactive profile');
+
 // A process with a foreign TUN owner must not be killed.
 $alive = ['t2s_A' => true]; $owned = false; $events = [];
 ob_start(); $ok = do_stop('A', 'proxytun2socks0'); ob_end_clean();
