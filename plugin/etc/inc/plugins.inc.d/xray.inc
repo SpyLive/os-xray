@@ -71,7 +71,7 @@ function xray_configure_do(bool $verbose = false): void
     }
 
     // Share the runtime mutation lock with Apply/Stop/Restart/watchdog.
-    $operationLock = fopen('/var/run/xray_service_operation.lock', 'c');
+    $operationLock = fopen('/var/run/xray_service_operation.lock', 'ce');
     if ($operationLock === false || !flock($operationLock, LOCK_EX | LOCK_NB)) {
         error_log('xray boot: another service operation holds the shared lock; skipping');
         if ($operationLock !== false) fclose($operationLock);
