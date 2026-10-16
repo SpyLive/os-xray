@@ -38,6 +38,15 @@ assert "' --config ' . escapeshellarg($t2sConf)" in boot
 assert "' -config ' . escapeshellarg($t2sConf)" not in boot
 assert "' -config '" not in all_php
 assert "run -test -c" in svc
+# Apply must configure TUN synchronously, without waiting on recursive configd reloads.
+assert "exec($hook . ' --tun-only 2>&1', $tunOutput, $tunRc);" in svc
+assert "if ($tunRc !== 0)" in svc
+assert "exec($hook . ' >/dev/null 2>&1 &');" in svc
+assert 'TUN_ONLY="${2:-}"' in boot_hook
+assert 'if [ "$TUN_ONLY" = "--tun-only" ]; then' in boot_hook
+assert 'setup_instance "$INST_UUID"' in boot_hook
+assert "    exit $?" in boot_hook
+assert "    ifconfig \"$TUN_IFACE\" inet \"$TUN_IP\" 2>&1 || return 1" in boot_hook
 # Regression: FreeBSD tun_destroy may block while tun2socks still owns /dev/tun.
 assert "tun_destroy($tunIface);" not in svc
 assert 'proc_is_running(t2s_pid_path($uuid)) || proc_is_running(xray_pid_path($uuid))' in svc
