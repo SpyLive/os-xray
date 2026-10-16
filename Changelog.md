@@ -12,6 +12,8 @@
 
 **Validation:** real OPNsense 26.7.4_1 / FreeBSD 15.1: Apply, Stop/Start, A/C/D switching, common-TUN conflict, watchdog cron and conflict error message tested. Forced-crash recovery and VPN traffic health checks have not been tested. Use a Proxmox/OPNsense backup before upgrade.
 
+**VM 109 upgrade/rollback test (2026-10-16):** restored VM 100 backup to temporary Proxmox VM 109; verified 3.1.1 → 3.1.3, repeated 3.1.3 → 3.1.3, rollback 3.1.3 → 3.1.1 from upgrade backup, then return 3.1.1 → 3.1.3. Across these updater/rollback operations, active Xray/tun2socks PIDs and the SHA-256 of `/conf/config.xml` remained unchanged. Watchdog cron registered after upgrade. **First Apply after the original 3.1.1 → 3.1.3 upgrade did restart both VPN processes; subsequent unchanged Apply did not.** Reason for first restart not proven. Plan for VPN interruption on initial Apply; updater itself does not invoke Apply. Tests do not establish universal rollback safety for files introduced in future versions.
+
 ---
 
 ## [3.1.0] — 2026-09-23
