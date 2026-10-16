@@ -111,7 +111,7 @@ class ServiceController extends ApiMutableServiceControllerBase
         $backend = new Backend();
         $output  = trim($backend->configdRun($cmd));
         return [
-            'result'  => empty($output) ? 'failed' : 'ok',
+            'result'  => (empty($output) || stripos($output, 'ERROR') !== false || stripos($output, 'failed') !== false) ? 'failed' : 'ok',
             'message' => $output ?: 'No response from configd',
         ];
     }
