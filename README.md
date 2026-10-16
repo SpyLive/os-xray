@@ -635,25 +635,15 @@ service configd restart
 
 ---
 
-### Zombie Processes
+### Unexpected or stale processes
+
+Do **not** run blanket `pkill` or delete all PID/lock files on a live router. Other profiles may be active. Diagnose process ownership and only perform a controlled stop/start from the GUI when an independent management path exists.
 
 ```sh
-# Multiple xray-core or tun2socks processes
-ps aux | grep -E 'xray-core|tun2socks' | grep -v grep
-
-# If more than one of each — kill all and restart cleanly:
-pkill -f xray-core
-pkill -f tun2socks
-rm -f /var/run/xray_core.pid /var/run/tun2socks.pid /var/run/xray_start_<INSTANCE_UUID>.lock
-sleep 1
-configctl xray start
-
-# PID file exists but process is dead
-cat /var/run/xray_core.pid
-ps -p <PID>
-# If "No such process" — stale PID file
-rm -f /var/run/xray_core.pid /var/run/tun2socks.pid
-configctl xray start
+configctl xray statusall
+ps -axww -o pid,ppid,stat,command | grep -E '[x]ray-core|[t]un2socks'
+ls -l /var/run/xray_core_*.pid /var/run/tun2socks_*.pid 2>/dev/null
+ifconfig proxytun2socks0
 ```
 
 ---
@@ -781,22 +771,10 @@ tail -f /var/log/xray-core.log        # live log monitoring
 
 ---
 
-### Reset and Reinstall
+### Recovery and Reinstallation
 
-```sh
-# Full reinstall without losing OPNsense config
-sh install.sh uninstall
-sh install.sh
+For a routine 3.x update, use `sh upgrade.sh` (see above). **Do not uninstall, delete runtime flags, or purge generated configurations** as an upgrade shortcut. For major migrations or recovery, take a Proxmox snapshot and full `/conf/config.xml` backup, then use an independent console to plan the migration.
 
-# Nuclear option — clean everything and start fresh
-configctl xray stop
-rm -f /var/run/xray_*.pid /var/run/xray_*.lock /var/run/xray_*.flag
-rm -f /usr/local/etc/xray-core/config-<INSTANCE_UUID>.json
-rm -f /usr/local/tun2socks/config-<INSTANCE_UUID>.yaml
-sh install.sh uninstall
-sh install.sh
-# Then re-import VLESS link and Apply
-```
 
 ---
 
