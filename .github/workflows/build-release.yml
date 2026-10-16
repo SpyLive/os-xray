@@ -98,7 +98,7 @@ jobs:
             echo "Verify VPN/TUN status after upgrading; do not Apply on a live VPN just to test the update."
             echo "Updates from 1.x/2.x require a separate migration plan."
             echo ""
-            echo "See README.md for full precautions and recovery instructions."'
+            echo "See README.md for full precautions and recovery instructions."
 
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
