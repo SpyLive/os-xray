@@ -8,7 +8,7 @@
 [![OPNsense](https://img.shields.io/badge/OPNsense-26.7.x-blue)](https://opnsense.org)
 [![FreeBSD](https://img.shields.io/badge/FreeBSD-15.1%20amd64-red)](https://freebsd.org)
 
-**Xray-core VPN plugin for OPNsense** — форк совместимости SpyLive v3.1.0
+**Xray-core VPN plugin for OPNsense** — форк совместимости SpyLive v3.1.3
 
 Xray-core + tun2socks — нативный VPN-клиент для OPNsense с поддержкой селективной маршрутизации. Интеграция Xray outbound + tun2socks для policy routing в OPNsense. VLESS-ссылку можно импортировать в JSON-объект outbound или отредактировать outbound вручную.
 
