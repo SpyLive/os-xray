@@ -608,8 +608,19 @@ function do_start(array $c): bool
             return false;
         }
 
-        // Назначаем IP на TUN через syshook (ждёт TUN, читает IP из config, reload firewall)
-        exec('/bin/sh /usr/local/etc/rc.syshook.d/start/50-xray ' . escapeshellarg($inst_uuid) . ' &');
+        // Set TUN address synchronously before reporting Started/OK.
+        // Do NOT wait for the full syshook here: its configctl filter/interface
+        // reloads can re-enter configd while Apply holds the global lock.
+        $hook = '/bin/sh /usr/local/etc/rc.syshook.d/start/50-xray ' . escapeshellarg($inst_uuid);
+        $tunOutput = [];
+        exec($hook . ' --tun-only 2>&1', $tunOutput, $tunRc);
+        if ($tunRc !== 0) {
+            echo "ERROR: TUN address setup failed for {$inst_uuid} (exit {$tunRc}): "
+                . implode(" | ", $tunOutput) . "\n";
+            return false;
+        }
+        // Background firewall/interface reload follows the verified TUN setup.
+        exec($hook . ' >/dev/null 2>&1 &');
 
         if (file_put_contents(xray_applied_hash_path($inst_uuid), xray_instance_hash($c), LOCK_EX) === false) {
             echo "WARNING: Could not record applied config hash for {$inst_uuid}.\n";
