@@ -635,26 +635,15 @@ service configd restart
 
 ---
 
-### Зомби-процессы
+### Неожиданные процессы и устаревшие PID
+
+**Не используйте массовый `pkill` и не удаляйте все PID/lock-файлы на работающем маршрутизаторе.** Так можно прервать активный профиль. Установите владельца процесса; штатный Stop/Start допускается только при наличии независимого пути управления.
 
 ```sh
-# Несколько процессов xray-core или tun2socks
-ps aux | grep -E 'xray-core|tun2socks' | grep -v grep
-
-# Если больше одного — убить все и перезапустить:
-pkill -f xray-core
-pkill -f tun2socks
-rm -f /var/run/xray_core_*.pid /var/run/tun2socks_*.pid /var/run/xray_start_<INSTANCE_UUID>.lock
-sleep 1
-configctl xray start
-
-# PID-файл есть, но процесс мёртв (v3.0.0: PID-файлы per-instance)
-ls /var/run/xray_core_*.pid
-# Проверить каждый PID:
-cat /var/run/xray_core_*.pid
-# Если "No such process" — устаревший PID-файл
-rm -f /var/run/xray_core_*.pid /var/run/tun2socks_*.pid
-configctl xray start
+configctl xray statusall
+ps -axww -o pid,ppid,stat,command | grep -E '[x]ray-core|[t]un2socks'
+ls -l /var/run/xray_core_*.pid /var/run/tun2socks_*.pid 2>/dev/null
+ifconfig proxytun2socks0
 ```
 
 ---
@@ -781,22 +770,10 @@ tail -f /var/log/xray-core.log        # мониторинг лога в реа�
 
 ---
 
-### Сброс и переустановка
+### Восстановление и переустановка
 
-```sh
-# Полная переустановка без потери конфига OPNsense
-sh install.sh uninstall
-sh install.sh
+Для штатного обновления 3.x используйте `sh upgrade.sh` (см. выше). **Не удаляйте плагин, runtime-флаги или сгенерированные конфиги** как способ обновления. Для миграции старых версий или восстановления сначала создайте снимок Proxmox и копию `/conf/config.xml`, затем выполняйте процедуру через независимую консоль.
 
-# Ядерный вариант — очистить всё и начать с нуля
-configctl xray stop
-rm -f /var/run/xray_*.pid /var/run/xray_*.lock /var/run/xray_*.flag
-rm -f /usr/local/etc/xray-core/config-<INSTANCE_UUID>.json
-rm -f /usr/local/tun2socks/config-<INSTANCE_UUID>.yaml
-sh install.sh uninstall
-sh install.sh
-# Затем заново импортировать VLESS-ссылку и Apply
-```
 
 ---
 
