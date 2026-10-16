@@ -670,6 +670,15 @@ if ($inst_uuid !== '') {
     }
 }
 
+// Serialize all service mutations across profiles sharing a TUN.
+if (in_array($action, ['start', 'stop', 'restart', 'reconfigure'], true)) {
+    $globalLock = fopen('/var/run/xray_service_operation.lock', 'c');
+    if ($globalLock === false || !flock($globalLock, LOCK_EX | LOCK_NB)) {
+        echo "ERROR: Another Xray service operation is in progress.\n";
+        exit(1);
+    }
+}
+
 switch ($action) {
     case 'start':
         if ($inst_uuid !== '') {
@@ -759,6 +768,7 @@ switch ($action) {
         // cannot interrupt the currently working tunnel.
         $all = xray_get_all_instances();
         $enabledIfaces = [];
+        $enabledSocks = [];
         foreach ($all as $uuid => $c) {
             if (!$c['enabled']) continue;
             $iface = $c['tun_iface'];
@@ -767,6 +777,12 @@ switch ($action) {
                 exit(1);
             }
             $enabledIfaces[$iface] = $uuid;
+            $sock = $c['socks5_listen'] . ':' . $c['socks5_port'];
+            if (isset($enabledSocks[$sock])) {
+                echo "ERROR: SOCKS {$sock} is enabled for multiple instances.\n";
+                exit(1);
+            }
+            $enabledSocks[$sock] = $uuid;
         }
 
         $allStopped = [];
