@@ -23,3 +23,5 @@ jobs:
         run: python3 tests/behavioral_stop_test.py
       - name: Behavioral Apply and restart regressions
         run: python3 tests/behavioral_actions_test.py
+      - name: Behavioral global lock inheritance
+        run: python3 tests/behavioral_lock_test.py
