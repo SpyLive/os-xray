@@ -73,13 +73,32 @@ jobs:
             echo ""
             echo ""
             echo "---"
-            echo "### Manual installation"
+            echo "### Fresh installation (OPNsense)"
+            echo "Use this only when the plugin is not installed yet."
             echo '```sh'
             echo "fetch -o /tmp/opnsense-xray.tar.gz ${DOWNLOAD_URL}"
             echo "cd /tmp && tar xzf opnsense-xray.tar.gz"
             echo "cd opnsense-xray"
-            echo "chmod +x install.sh && sh install.sh"
+            echo "sh install.sh"
             echo '```'
+            echo ""
+            echo "### Upgrade an existing 3.x installation"
+            echo "Before upgrading, back up OPNsense and arrange independent console access."
+            echo "Reboot OPNsense first, wait for startup, and confirm the active VPN and TUN are healthy."
+            echo "Do not upgrade while TUN is stuck after Apply on an older version; that state is untested."
+            echo '```sh'
+            echo "configctl xray statusall"
+            echo "ifconfig proxytun2socks0"
+            echo "fetch -o /tmp/opnsense-xray.tar.gz ${DOWNLOAD_URL}"
+            echo "cd /tmp && tar xzf opnsense-xray.tar.gz"
+            echo "cd opnsense-xray"
+            echo "sh upgrade.sh"
+            echo '```'
+            echo "The updater does not stop Xray/tun2socks or invoke Apply."
+            echo "Verify VPN/TUN status after upgrading; do not Apply on a live VPN just to test the update."
+            echo "Updates from 1.x/2.x require a separate migration plan."
+            echo ""
+            echo "See README.md for full precautions and recovery instructions."'
 
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
