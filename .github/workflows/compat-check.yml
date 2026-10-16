@@ -21,3 +21,5 @@ jobs:
         run: python3 tests/static_compat_test.py
       - name: Behavioral stop regressions
         run: python3 tests/behavioral_stop_test.py
+      - name: Behavioral Apply and restart regressions
+        run: python3 tests/behavioral_actions_test.py
