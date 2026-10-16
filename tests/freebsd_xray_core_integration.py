@@ -44,8 +44,8 @@ def local_http_server():
             request = client.recv(8192)
             assert b"GET /tun-smoke" in request, request
             received.append("HTTP")
-            reply = (b"HTTP/1.1 200 OK\\r\\nContent-Length: " +
-                     str(len(payload)).encode() + b"\\r\\nConnection: close\\r\\n\\r\\n" + payload)
+            reply = (b"HTTP/1.1 200 OK\r\nContent-Length: " +
+                     str(len(payload)).encode() + b"\r\nConnection: close\r\n\r\n" + payload)
             client.sendall(reply)
     except Exception as exc:
         proxy_error.append(str(exc))
