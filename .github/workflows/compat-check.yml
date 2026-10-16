@@ -19,3 +19,5 @@ jobs:
           find plugin -type f -name '*.php' -print0 | xargs -0 -n1 php -l
       - name: Fork compatibility assertions
         run: python3 tests/static_compat_test.py
+      - name: Behavioral stop regressions
+        run: python3 tests/behavioral_stop_test.py
