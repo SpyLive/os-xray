@@ -25,3 +25,5 @@ jobs:
         run: python3 tests/behavioral_actions_test.py
       - name: Behavioral global lock inheritance
         run: python3 tests/behavioral_lock_test.py
+      - name: Behavioral SOCKS listener conflicts
+        run: python3 tests/behavioral_socks_test.py
