@@ -17,7 +17,7 @@ if not sys.platform.startswith("freebsd") or os.geteuid() != 0:
     raise SystemExit("This integration requires root inside disposable FreeBSD VM")
 
 binary = Path(sys.argv[1])
-iface = "proxytun2socks93"
+iface = "t2sreg93"
 def tun_info():
     return subprocess.run(["/sbin/ifconfig", iface], capture_output=True, text=True, timeout=5)
 
