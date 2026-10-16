@@ -22,8 +22,10 @@ assert 'echo "Already stopped.' in svc
 assert 'return true;' in svc
 assert "WARNING: stale PID file" in svc
 assert "xray_service_operation.lock" in svc
-assert "isset($enabledSocks[$sock])" in svc
-assert "isset($enabledTuns[$tun]) || isset($enabledSocks[$sock])" in boot
+assert "function xray_socks_conflict(" in svc
+assert "xray_socks_conflict($c['socks5_listen']" in svc
+assert "foreach ($enabledSocks as $previous)" in boot
+assert "isset($enabledTuns[$tun])" in boot
 assert '}, false, function () {' in ui and 'dfObj.reject();' in ui
 action = api.split('public function reconfigureAction', 1)[1].split('public function statusAction', 1)[0]
 assert "'status' => 'failed'" in action
