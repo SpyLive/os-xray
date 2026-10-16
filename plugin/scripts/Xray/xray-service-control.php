@@ -484,6 +484,12 @@ function do_stop(string $inst_uuid, ?string $tunIface = null): bool
     // A disabled profile sharing this TUN must never stop its active owner.
     if (!proc_is_running(t2s_pid_path($inst_uuid))
         && !proc_is_running(xray_pid_path($inst_uuid))) {
+        // A missing PID file is not proof that this instance released NativeTun.
+        // Do not silently mark it stopped while its real process owns the TUN.
+        if (tun_owned_by_instance($tunIface, $inst_uuid)) {
+            echo "ERROR: Instance {$inst_uuid} still owns TUN {$tunIface} without a usable PID file.\n";
+            return false;
+        }
         @unlink(xray_applied_hash_path($inst_uuid));
         file_put_contents(xray_stopped_flag($inst_uuid), date('Y-m-d H:i:s'));
         echo "Already stopped.\n";
