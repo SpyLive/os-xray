@@ -70,6 +70,15 @@ function xray_configure_do(bool $verbose = false): void
         $enabledSocks[$sock] = $uuid;
     }
 
+    // Share the runtime mutation lock with Apply/Stop/Restart/watchdog.
+    $operationLock = fopen('/var/run/xray_service_operation.lock', 'c');
+    if ($operationLock === false || !flock($operationLock, LOCK_EX | LOCK_NB)) {
+        error_log('xray boot: another service operation holds the shared lock; skipping');
+        if ($operationLock !== false) fclose($operationLock);
+        return;
+    }
+
+    try {
     foreach ($instances->instance as $inst) {
         $inst_uuid = (string)$inst['uuid'];
         if (!xray_valid_instance_uuid_boot($inst_uuid)
@@ -199,6 +208,11 @@ function xray_configure_do(bool $verbose = false): void
                 }
             }
         }
+    }
+
+    } finally {
+        flock($operationLock, LOCK_UN);
+        fclose($operationLock);
     }
 
     // reload firewall/routing — выполняется всегда
