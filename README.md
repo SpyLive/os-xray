@@ -104,6 +104,8 @@ configctl xray version
 
 **Do not use `install.sh` for routine live upgrades.** It also performs first-install imports, legacy migrations, binary checks and legacy PID cleanup. For an already configured 3.x instance, use the separate `upgrade.sh` from the intended **release tag/main commit**, not a moving development branch.
 
+**Required pre-upgrade precaution:** Perform a controlled OPNsense reboot **before running `upgrade.sh`**, preferably with Proxmox console access and a backup. Wait for boot completion and confirm the selected VPN instance and TUN are healthy (`configctl xray statusall`, `ifconfig proxytun2socks0`) before proceeding. **Do not run the updater while TUN is blocked/stuck after Apply on an older plugin version.** Upgrading from that state has not been tested; a reboot is a precaution, not proof that every possible stuck-TUN condition will recover. Arrange alternate network management access before reboot because it interrupts VPN connectivity. If normal service does not recover after reboot, investigate rather than upgrading blindly.
+
 Before updating, make an OPNsense/Proxmox backup and retain an independent console or alternate management route. The updater backs up `/conf/config.xml` and existing plugin files under `/root/os-xray-upgrade-YYYYMMDD-HHMMSS/`. It replaces only plugin-owned files, leaves VPN binaries and current Xray/tun2socks processes running, reloads configd, and regenerates the watchdog cron registration. It does **not** run Apply. Updates from 1.x/2.x require a separate migration plan.
 
 ```sh
