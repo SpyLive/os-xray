@@ -12,7 +12,7 @@ end = svc.index("    case 'status':", start)
 switch = svc[start:end] + "\n    default: exit(90);\n}\n"
 prelude = r'''<?php
 $events = [];
-$running = ['C' => true];
+$liveProcesses = ['C' => true];
 $enabled = 'A';
 $secondEnabled = '';
 $failStop = '';
@@ -38,25 +38,25 @@ function t2s_pid_path($id) { return 't2s_'.$id; }
 function xray_pid_path($id) { return 'xray_'.$id; }
 function proc_is_running($path) {
     $id = substr($path, strpos($path, '_') + 1);
-    return $GLOBALS['running'][$id] ?? false;
+    return $GLOBALS['liveProcesses'][$id] ?? false;
 }
-function tun_owned_by_instance($iface, $id) { return $GLOBALS['running'][$id] ?? false; }
+function tun_owned_by_instance($iface, $id) { return $GLOBALS['liveProcesses'][$id] ?? false; }
 function xray_applied_hash_path($id) { return $GLOBALS['dir'].'/'.$id; }
 function xray_instance_hash($cfg) { return hash('sha256', json_encode($cfg)); }
 function do_stop($id, $iface = null) {
     $GLOBALS['events'][] = 'stop:'.$id;
     if ($id === $GLOBALS['failStop']) return false;
-    unset($GLOBALS['running'][$id]);
+    unset($GLOBALS['liveProcesses'][$id]);
     @unlink(xray_applied_hash_path($id));
     return true;
 }
 function do_start($cfg) {
     $id = $cfg['inst_uuid'];
     $GLOBALS['events'][] = 'start:'.$id;
-    foreach ($GLOBALS['running'] as $other => $alive) {
+    foreach ($GLOBALS['liveProcesses'] as $other => $alive) {
         if ($alive && $other !== $id) return false;
     }
-    $GLOBALS['running'][$id] = true;
+    $GLOBALS['liveProcesses'][$id] = true;
     file_put_contents(xray_applied_hash_path($id), xray_instance_hash($cfg));
     return true;
 }
