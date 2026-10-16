@@ -281,8 +281,11 @@ function xray_services()
  */
 function xray_cron(): array
 {
+    // OPNsense plugins_cron() expects each entry to contain an 'autocron'
+    // tuple: [shell command, minute, hour, day, month, weekday].
+    // A bare positional tuple is ignored by system_cron_configure().
     return [
-        ['xray_cron_watchdog', '/', '*', '*', '*', '*'],
+        ['autocron' => ['/usr/local/sbin/configctl -d xray watchdog', '*']],
     ];
 }
 
