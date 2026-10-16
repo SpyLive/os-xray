@@ -678,7 +678,7 @@ if ($inst_uuid !== '') {
 
 // Serialize all service mutations across profiles sharing a TUN.
 if (in_array($action, ['start', 'stop', 'restart', 'reconfigure'], true)) {
-    $globalLock = fopen('/var/run/xray_service_operation.lock', 'c');
+    $globalLock = fopen('/var/run/xray_service_operation.lock', 'ce');
     if ($globalLock === false || !flock($globalLock, LOCK_EX | LOCK_NB)) {
         echo "ERROR: Another Xray service operation is in progress.\n";
         exit(1);
