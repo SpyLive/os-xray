@@ -20,7 +20,7 @@ jobs:
           release: "15.1"
           usesh: true
           prepare: |
-            pkg install -y php84 python311
+            pkg install -y php84 python311 unzip ca_root_nss
           run: |
             set -eu
             uname -a
@@ -38,3 +38,12 @@ jobs:
             ifconfig -l
             test -c /dev/tun || test -c /dev/tun0 || true
             echo "FreeBSD 15.1 VM regression suite: OK"
+            # Download exactly the pinned tun2socks 2.7.0 FreeBSD build.
+            fetch -o /tmp/tun2socks-freebsd-amd64.zip https://github.com/xjasonlyu/tun2socks/releases/download/v2.7.0/tun2socks-freebsd-amd64.zip
+            echo "3ebb747aa83ee3157330beb324bbeaf9a742db6a8d24b9bbc96a4125aaeeeaea  /tmp/tun2socks-freebsd-amd64.zip" | sha256 -c
+            mkdir -p /tmp/xray-tun-bin
+            unzip -oq /tmp/tun2socks-freebsd-amd64.zip -d /tmp/xray-tun-bin
+            T2S=$(find /tmp/xray-tun-bin -type f -name 'tun2socks-freebsd-amd64*' | head -1)
+            test -n "$T2S"
+            chmod +x "$T2S"
+            python3.11 tests/freebsd_native_tun_integration.py "$T2S"
