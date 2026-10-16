@@ -40,7 +40,7 @@ jobs:
             echo "FreeBSD 15.1 VM regression suite: OK"
             # Download exactly the pinned tun2socks 2.7.0 FreeBSD build.
             fetch -o /tmp/tun2socks-freebsd-amd64.zip https://github.com/xjasonlyu/tun2socks/releases/download/v2.7.0/tun2socks-freebsd-amd64.zip
-            echo "3ebb747aa83ee3157330beb324bbeaf9a742db6a8d24b9bbc96a4125aaeeeaea  /tmp/tun2socks-freebsd-amd64.zip" | sha256 -c
+            test "$(sha256 -q /tmp/tun2socks-freebsd-amd64.zip)" = "3ebb747aa83ee3157330beb324bbeaf9a742db6a8d24b9bbc96a4125aaeeeaea"
             mkdir -p /tmp/xray-tun-bin
             unzip -oq /tmp/tun2socks-freebsd-amd64.zip -d /tmp/xray-tun-bin
             T2S=$(find /tmp/xray-tun-bin -type f -name 'tun2socks-freebsd-amd64*' | head -1)
