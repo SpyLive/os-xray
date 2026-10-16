@@ -31,6 +31,14 @@ action = api.split('public function reconfigureAction', 1)[1].split('public func
 assert "'status' => 'failed'" in action
 assert "'status' => 'ok'" in action
 assert "'status_msg'" in action
+# A failed Apply must return the script's ERROR text through configd,
+# not masquerade as an unavailable backend.
+actions = (root / "plugin/service/conf/actions.d/actions_xray.conf").read_text()
+reconfigure = actions.split("[reconfigure]", 1)[1].split("[status]", 1)[0]
+assert "type:script_output" in reconfigure
+assert "errors:no" in reconfigure
+assert "if (empty($output))" in action
+assert "stripos($output, 'ERROR')" in action
 
 assert "T2S_BIN, '--config " in svc
 assert "T2S_BIN, '-config " not in svc
