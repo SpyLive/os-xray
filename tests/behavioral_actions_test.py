@@ -14,6 +14,7 @@ prelude = r'''<?php
 $events = [];
 $running = ['C' => true];
 $enabled = 'A';
+$secondEnabled = '';
 $failStop = '';
 $hashes = [];
 $dir = sys_get_temp_dir() . '/os-xray-apply-' . getmypid();
@@ -25,7 +26,7 @@ register_shutdown_function(function () {
 function profiles() {
     $all = [];
     foreach (['A','C','D'] as $id) {
-        $all[$id] = ['inst_uuid'=>$id,'enabled'=>$id === $GLOBALS['enabled'],
+        $all[$id] = ['inst_uuid'=>$id,'enabled'=>($id === $GLOBALS['enabled'] || $id === $GLOBALS['secondEnabled']),
                     'tun_iface'=>'proxytun2socks0', 'socks5_listen'=>'127.0.0.1',
                     'socks5_port'=>10808, 'name'=>$id];
     }
@@ -74,8 +75,11 @@ file_put_contents(xray_applied_hash_path('C'), xray_instance_hash(profiles()['C'
 ob_start();
 ''',
     "conflicting_profiles": r'''
-$enabled = 'A'; $action = 'reconfigure'; $inst_uuid = '';
-// Override enabled profile selection with fake override used by profiles().
+$enabled = 'A'; $secondEnabled = 'C'; $action = 'reconfigure'; $inst_uuid = '';
+ob_start();
+''',
+    "failed_stop": r'''
+$enabled = 'A'; $failStop = 'C'; $action = 'reconfigure'; $inst_uuid = '';
 ob_start();
 ''',
     "restart_all": r'''
@@ -85,12 +89,12 @@ ob_start();
 }
 # Top-level runtime exits, so inspect JSON emitted by shutdown handler.
 for name, setup in scenarios.items():
-    if name == "conflicting_profiles":
-        continue
     expected = {
         "switch_C_to_A": ["stop:C", "start:A"],
         "idempotent_C": [],
         "restart_all": ["stop:A", "stop:C", "stop:D", "start:A"],
+        "conflicting_profiles": [],
+        "failed_stop": ["stop:C"],
     }[name]
     main = prelude + setup
     main += r'''
@@ -100,8 +104,9 @@ register_shutdown_function(function () {
 '''
     main += switch
     run = subprocess.run(["php"], input=main, text=True, capture_output=True, timeout=15)
-    if run.returncode:
-        raise AssertionError(f"{name}: exit {run.returncode}\n{run.stdout}\n{run.stderr}")
+    expected_exit = 1 if name in ("conflicting_profiles", "failed_stop") else 0
+    if run.returncode != expected_exit:
+        raise AssertionError(f"{name}: exit {run.returncode}, expected {expected_exit}\n{run.stdout}\n{run.stderr}")
     import json
     if "TEST_EVENTS:" not in run.stdout:
         raise AssertionError(f"{name}: no events recorded: {run.stdout}")
