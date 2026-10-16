@@ -12,7 +12,23 @@ boot = (root / "plugin/etc/inc/plugins.inc.d/xray.inc").read_text()
 boot_hook = (root / "plugin/etc/rc.syshook.d/start/50-xray").read_text()
 model = (root / "plugin/mvc/app/models/OPNsense/Xray/Instance.xml").read_text()
 watchdog = (root / "plugin/scripts/Xray/xray-watchdog.php").read_text()
+ui = (root / "plugin/mvc/app/views/OPNsense/Xray/partials/scripts.volt").read_text()
+api = (root / "plugin/mvc/app/controllers/OPNsense/Xray/Api/ServiceController.php").read_text()
 all_php = "\n".join(p.read_text() for p in (root / "plugin").rglob("*.php"))
+
+# Regressions confirmed on FreeBSD 15.1 with multiple profiles sharing one TUN.
+assert r"preg_match('/Opened by PID\s+(\d+)/', implode(\"\n\", $lines), $m)" in svc
+assert 'echo "Already stopped.' in svc
+assert 'return true;' in svc
+assert "WARNING: stale PID file" in svc
+assert "xray_service_operation.lock" in svc
+assert "isset($enabledSocks[$sock])" in svc
+assert "isset($enabledTuns[$tun]) || isset($enabledSocks[$sock])" in boot
+assert '}, false, function () {' in ui and 'dfObj.reject();' in ui
+action = api.split('public function reconfigureAction', 1)[1].split('public function statusAction', 1)[0]
+assert "'status' => 'failed'" in action
+assert "'status' => 'ok'" in action
+assert "'status_msg'" in action
 
 assert "T2S_BIN, '--config " in svc
 assert "T2S_BIN, '-config " not in svc
