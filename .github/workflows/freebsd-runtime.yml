@@ -47,3 +47,4 @@ jobs:
             test -n "$T2S"
             chmod +x "$T2S"
             python3.11 tests/freebsd_native_tun_integration.py "$T2S"
+            python3.11 tests/freebsd_packet_path_integration.py "$T2S"
