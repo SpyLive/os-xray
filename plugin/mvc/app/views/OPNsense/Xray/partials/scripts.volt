@@ -20,7 +20,8 @@
                 '</span> ' +
                 '<span class="label ' + (tOk ? 'label-success' : 'label-danger') + '" style="font-size:11px;">' +
                 'tun: ' + (tOk ? 'up' : 'down') +
-                '</span>';
+                '</span>' + (xOk && tOk && info.network_state === 'unconfirmed'
+                    ? ' <span class="label label-warning">{{ lang._("Network setup unconfirmed") }}</span>' : '');
         }
 
         function applyStatusToGrid() {
@@ -44,6 +45,21 @@
             });
         }
 
+        var validationDialogUuid = '';
+        var validationDialogEpoch = 0;
+        function resetDialogValidation() {
+            validationDialogUuid = '';
+            validationDialogEpoch++;
+            $('#dlgValidateBtn').prop('disabled', true);
+            $('#dlgValidateResult').text('').removeClass('text-success text-danger');
+        }
+        function savedDialogLoaded(payload) {
+            var uuid = (payload.frm_DialogInstance || {}).instance_uuid || '';
+            validationDialogUuid = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(uuid) ? uuid : '';
+            $('#dlgValidateBtn').prop('disabled', !validationDialogUuid);
+            return $.Deferred().resolve().promise();
+        }
+
         // ── Instances CRUD table (UIBootgrid) ───────────────────────
         $('#grid-instances').UIBootgrid({
             search: '/api/xray/instance/searchItem',
@@ -53,6 +69,7 @@
             del:    '/api/xray/instance/delItem/',
             toggle: '/api/xray/instance/toggleItem/',
             options: {
+                onBeforeRenderDialog: savedDialogLoaded,
                 formatters: {
                     instanceStatus: function (column, row) {
                         // TODO: show "disabled" label instead of status badges when row.enabled === '0'
@@ -272,7 +289,9 @@
 
         // Inject Import panel + Validate button into DialogInstance on first open
         var dialogInjected = false;
+        $('#DialogInstance').on('hidden.bs.modal', resetDialogValidation);
         $('#DialogInstance').on('show.bs.modal', function () {
+            resetDialogValidation();
             if (dialogInjected) {
                 // Reset state on each open
                 $('#dlgImportLink').val('');
@@ -310,9 +329,10 @@
 
             // Validate button — in footer, before Save
             var validateHtml =
-                '<button type="button" id="dlgValidateBtn" class="btn btn-info pull-left">' +
-                    '<i class="fa fa-check-circle"></i> {{ lang._("Validate Config") }}' +
+                '<button type="button" id="dlgValidateBtn" disabled class="btn btn-info pull-left">' +
+                    '<i class="fa fa-check-circle"></i> {{ lang._("Validate saved configuration") }}' +
                 '</button>' +
+                '<div class="text-muted text-left">{{ lang._("Unsaved changes are not validated. Save a new instance and reopen it to validate.") }}</div>' +
                 '<span id="dlgValidateResult" class="pull-left" style="font-size: 12px; line-height: 34px; margin-left: 8px;"></span>';
             var $footer = $(this).find('.modal-footer');
             $footer.prepend(validateHtml);
@@ -369,15 +389,19 @@
 
         // ── Validate Config (inside DialogInstance footer) ────────
         $(document).on('click', '#dlgValidateBtn', function () {
+            var uuid = validationDialogUuid;
+            var epoch = validationDialogEpoch;
+            if (!uuid) return;
             var $btn = $(this).prop('disabled', true);
             var $res = $('#dlgValidateResult');
             $res.removeClass('text-success text-danger').text("{{ lang._('Validating...') }}");
 
             $.ajax({
-                url:      '/api/xray/service/validate',
+                url:      '/api/xray/service/validate/' + encodeURIComponent(uuid),
                 type:     'POST',
                 dataType: 'json',
                 success: function (data) {
+                    if (epoch !== validationDialogEpoch || uuid !== validationDialogUuid) return;
                     $btn.prop('disabled', false);
                     if (data.result === 'ok') {
                         $res.removeClass('text-danger').addClass('text-success')
@@ -388,6 +412,7 @@
                     }
                 },
                 error: function (xhr) {
+                    if (epoch !== validationDialogEpoch || uuid !== validationDialogUuid) return;
                     $btn.prop('disabled', false);
                     $res.addClass('text-danger').text("{{ lang._('HTTP error:') }} " + xhr.status);
                 }

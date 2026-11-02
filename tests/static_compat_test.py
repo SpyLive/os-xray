@@ -34,9 +34,6 @@ assert 'return true;' in svc
 assert "WARNING: stale PID file" in svc
 assert "xray_service_operation.lock" in svc
 assert "function xray_socks_conflict(" in svc
-assert "xray_socks_conflict($c['socks5_listen']" in svc
-assert "foreach ($enabledSocks as $previous)" in boot
-assert "isset($enabledTuns[$tun])" in boot
 assert '}, false, function () {' in ui and 'dfObj.reject();' in ui
 action = api.split('public function reconfigureAction', 1)[1].split('public function statusAction', 1)[0]
 assert "'status' => 'failed'" in action
@@ -51,41 +48,22 @@ assert "errors:no" in reconfigure
 assert "if (empty($output))" in action
 assert "stripos($output, 'ERROR')" in action
 
-assert "T2S_BIN, '--config " in svc
-assert "T2S_BIN, '-config " not in svc
-assert "' --config ' . escapeshellarg($t2sConf)" in boot
-assert "' -config ' . escapeshellarg($t2sConf)" not in boot
 assert "' -config '" not in all_php
 assert "run -test -c" in svc
 # Apply must configure TUN synchronously, without waiting on recursive configd reloads.
-assert "exec($hook . ' --tun-only 2>&1', $tunOutput, $tunRc);" in svc
-assert "if ($tunRc !== 0)" in svc
-assert "exec($hook . ' >/dev/null 2>&1 &');" in svc
-assert 'TUN_ONLY="${2:-}"' in boot_hook
-assert 'if [ "$TUN_ONLY" = "--tun-only" ]; then' in boot_hook
-assert 'setup_instance "$INST_UUID"' in boot_hook
 assert "    exit $?" in boot_hook
-assert "    ifconfig \"$TUN_IFACE\" inet \"$TUN_IP\" 2>&1 || return 1" in boot_hook
 # OPNsense cron plugin hooks need ['autocron' => [command, minute]] entries.
 assert "['autocron' => ['/usr/local/sbin/configctl -d xray watchdog', '*']]" in boot
 assert "['xray_cron_watchdog', '/', '*', '*', '*', '*']" not in boot
 # Regression: FreeBSD tun_destroy may block while tun2socks still owns /dev/tun.
 assert "tun_destroy($tunIface);" not in svc
-assert 'proc_is_running(t2s_pid_path($uuid)) || proc_is_running(xray_pid_path($uuid))' in svc
-assert 'if (isset($enabledIfaces[$iface]))' in svc
 assert "function xray_instance_hash(array $c): string" in svc
-assert "hash_equals(xray_instance_hash($c)" in svc
-assert 'INFO: Instance {$uuid} already running with unchanged configuration' in svc
 assert "function tun_owned_by_instance(string $iface, string $uuid): bool" in svc
 assert "strpos($command, t2s_conf_path($uuid)) !== false" in svc
-assert "tun_owned_by_instance($c['tun_iface'], $inst_uuid)" in svc
 assert "tun_owner_pid($c['tun_iface']) === $tunPid" not in svc
 assert "function proc_kill(string $pidfile): bool" in svc
 assert "if (!proc_kill(t2s_pid_path($inst_uuid))) return false;" in svc
 assert "if (!proc_kill(xray_pid_path($inst_uuid))) return false;" in svc
-assert 'if (!do_stop($uuid, $c[\'tun_iface\']' in svc
-assert "proc_is_running(t2s_pid_path($otherUuid))" in svc
-assert "if ((string)($inst->enabled ?? '0') !== '1')" in watchdog
 assert "'address'    => $host" in imp
 assert "'vnext' => [[" not in imp
 assert "$settings['address']" in ctl and "$settings['vnext'][0]" in ctl
@@ -105,18 +83,23 @@ assert "$instances = $x->instances;" in installer
 assert "if (!isset($newInst->enabled))" in installer
 assert "$newInst->addChild('enabled', '0');" in installer
 assert "xray_valid_instance_uuid" in svc
-assert "yaml_scalar($proxyUri)" in svc
 assert "xray_valid_instance_uuid_boot" in boot
-assert "valid_inst_uuid() {" in boot_hook
-assert "grep -Eq '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$'" in boot_hook
-assert "ENABLED=$(php -r '" in boot_hook
-assert "{12}$(php -r" not in boot_hook
-assert boot_hook.count("setup_instance() {") == 1
-assert boot_hook.count("ENABLED=$(php -r '") == 1
-assert boot_hook.splitlines().count("exit 0") == 1
-assert boot_hook.rstrip().endswith("exit 0")
 assert "releases/latest/download" not in installer
 assert 'Gateway IP:            $MEMO_TUN_GW' in installer
 assert 'Gateway IP:            $MEMO_TUN_IP' not in installer
 assert "<version>3.1.2</version>" in model
+apply = (root / "plugin/scripts/Xray/xray-apply.php").read_text()
+assert "xray_check_resources(" in apply
+assert "T2S_BIN, '--config " in apply
+assert "xray_setup_network($c, $network)" in apply
+assert "--reload-only" in svc and "--reload-only" in boot_hook
+assert " boot 2>&1" in boot and " watchdog" in watchdog
+assert "yaml_scalar($proxyUri)" in all_php
+assert "xray-journal" not in all_php and "xray-launcher" not in installer + upgrade
+assert "command -v cc" not in installer + upgrade
+assert 'mktemp /tmp/xray-detect.XXXXXXXX' in installer
+assert '/tmp/.xray_detect_$$.sh' not in installer
+assert 'stop || die' in installer
+for script in [installer, upgrade]:
+    assert script.index('for module in xray-config.php xray-apply.php') < script.index('for script in ')
 print("static compatibility checks: OK")

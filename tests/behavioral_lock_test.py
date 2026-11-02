@@ -12,8 +12,8 @@ import time
 root = Path(__file__).resolve().parents[1]
 svc = (root / "plugin/scripts/Xray/xray-service-control.php").read_text()
 boot = (root / "plugin/etc/inc/plugins.inc.d/xray.inc").read_text()
-for path, source in (("runtime", svc), ("boot", boot)):
-    assert "fopen('/var/run/xray_service_operation.lock', 'ce')" in source, path
+assert "fopen('/var/run/xray_service_operation.lock', 'ce')" in svc
+assert ' boot 2>&1' in boot  # boot delegates to the locked controller
 
 with tempfile.TemporaryDirectory() as temp:
     lock = str(Path(temp) / "operation.lock")

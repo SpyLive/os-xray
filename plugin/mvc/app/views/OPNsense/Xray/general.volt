@@ -1,3 +1,25 @@
+{# Only the instance selectors on this page; leave OPNsense theme controls unchanged. #}
+<style>
+    #xray-instance-tabs .xray-instance-selector {
+        flex: 0 1 260px;
+        width: 260px;
+        max-width: 100%;
+        min-width: 0;
+        table-layout: fixed;
+    }
+    #xray-instance-tabs .xray-instance-selector > .input-group-addon {
+        width: 34px;
+    }
+    #xray-instance-tabs .xray-instance-selector > select.form-control {
+        /* The theme's small select line-height includes the padded field height. */
+        line-height: normal;
+        min-width: 0;
+        padding-right: 24px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+</style>
+
 {{ partial('OPNsense/Xray/partials/scripts') }}
 
 <ul class="nav nav-tabs" data-tabs="tabs" id="maintabs">
@@ -7,7 +29,7 @@
     <li><a data-toggle="tab" href="#logs">{{ lang._('Log') }}</a></li>
 </ul>
 
-<div class="tab-content content-box">
+<div id="xray-instance-tabs" class="tab-content content-box">
     {{ partial('OPNsense/Xray/partials/tab_instances') }}
 
     <div id="general" class="tab-pane fade in">

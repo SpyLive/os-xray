@@ -69,18 +69,26 @@ process = None
 xray_process = None
 route_added = False
 with tempfile.TemporaryDirectory(prefix="xray-packet-path-") as directory:
-    xray_config = Path(directory) / "xray.json"
-    xray_config.write_text(json.dumps({
-        "log": {"loglevel": "warning"},
-        "inbounds": [{"tag": "socks-in", "listen": "127.0.0.1",
-                      "port": 19995, "protocol": "socks",
-                      "settings": {"auth": "noauth", "udp": True}}],
-        "outbounds": [{"tag": "direct", "protocol": "freedom",
-                       "settings": {"redirect": "127.0.0.1:18195"}}]
-    }))
+    # Exercise the production legacy builder with the installer-pinned real core.
+    settings = {
+        "outbound_config": json.dumps({"tag": "proxy", "protocol": "freedom",
+                                      "settings": {"redirect": "127.0.0.1:18195"}}),
+        "socks5_listen": "127.0.0.1", "socks5_port": 19995,
+        "tun_iface": iface, "mtu": 1500, "bypass_networks": "192.0.2.0/24",
+    }
+    generated = subprocess.run([
+        "php", "-r", "require $argv[1]; $c=json_decode(stream_get_contents(STDIN),true); "
+        "echo json_encode(['json'=>xray_build_config($c),'yaml'=>xray_build_t2s_config($c)],JSON_THROW_ON_ERROR);",
+        str(Path(__file__).resolve().parents[1]/"plugin/scripts/Xray/xray-config.php"),
+    ], input=json.dumps(settings), text=True, capture_output=True, check=True, timeout=8)
+    built = json.loads(generated.stdout)
+    xray_config = Path(directory) / "xray-candidate"
+    xray_config.write_text(json.dumps(built["json"]))
+    xray_config.chmod(0o600)
+    run([sys.argv[2], "run", "-test", "-c", str(xray_config), "-format=json"])
     xray_log = Path(directory) / "xray.log"
     xray_output = xray_log.open("wb")
-    xray_process = subprocess.Popen([sys.argv[2], "run", "-c", str(xray_config)],
+    xray_process = subprocess.Popen([sys.argv[2], "run", "-c", str(xray_config), "-format=json"],
                                     stdout=xray_output, stderr=subprocess.STDOUT,
                                     start_new_session=True)
     deadline = time.monotonic() + 8
@@ -95,8 +103,7 @@ with tempfile.TemporaryDirectory(prefix="xray-packet-path-") as directory:
     else:
         raise TimeoutError("Xray SOCKS listener not ready")
     cfg = Path(directory) / "tun2socks.yaml"
-    cfg.write_text(f"proxy: socks5://127.0.0.1:19995\n"
-                   f"device: {iface}\nmtu: 1500\nloglevel: info\n")
+    cfg.write_text(built["yaml"])
     log = Path(directory) / "tun2socks.log"
     with log.open("wb") as output:
         try:

@@ -169,6 +169,9 @@ class ServiceController extends ApiMutableServiceControllerBase
         if (!$this->request->isPost()) {
             return ['result' => 'failed', 'message' => 'POST required'];
         }
+        if ($uuid !== '' && !preg_match('/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iD', (string)$uuid)) {
+            return ['result' => 'failed', 'message' => 'Invalid instance UUID'];
+        }
         $uuid    = $this->sanitizeUuid((string)$uuid);
         $cmd     = 'xray validate' . ($uuid !== '' ? ' ' . $uuid : '');
         $backend = new Backend();

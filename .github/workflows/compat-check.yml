@@ -13,10 +13,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Shell syntax
-        run: sh -n install.sh && sh -n upgrade.sh
+        run: sh -n install.sh && sh -n upgrade.sh && sh -n plugin/etc/rc.syshook.d/start/50-xray
       - name: PHP syntax
         run: |
           find plugin -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+          php -l plugin/etc/inc/plugins.inc.d/xray.inc
       - name: Fork compatibility assertions
         run: python3 tests/static_compat_test.py
       - name: Behavioral stop regressions
@@ -27,3 +28,16 @@ jobs:
         run: python3 tests/behavioral_lock_test.py
       - name: Behavioral SOCKS listener conflicts
         run: python3 tests/behavioral_socks_test.py
+      - name: Legacy configuration builder
+        run: python3 tests/behavioral_config_test.py
+      - name: Interrupted controller publication
+        run: python3 tests/upgrade_publication_test.py
+      - name: Candidate validation through the actual PHP CLI
+        run: python3 tests/behavioral_candidate_test.py
+      - name: Saved instance Validate API and dialog
+        run: |
+          python3 tests/behavioral_validate_api_test.py
+          python3 tests/behavioral_process_identity_test.py
+          python3 tests/behavioral_boot_log_test.py
+          node tests/gui_validate_test.js
+          node tests/gui_logs_test.js

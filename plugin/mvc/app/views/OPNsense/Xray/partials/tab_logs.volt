@@ -47,15 +47,16 @@
                 </div>
 
                 <div id="logCore" class="tab-pane fade in" style="padding-top: 10px;">
-                    <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 8px;">
+                    <div style="margin-bottom: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
                         <button id="logCoreRefreshBtn" class="btn btn-sm btn-default">
                             <i class="fa fa-refresh fa-fw"></i> {{ lang._('Refresh') }}
                         </button>
-                        <div class="input-group input-group-sm" style="min-width: 200px; width: auto;">
+                        <div class="input-group input-group-sm xray-instance-selector">
                             <span class="input-group-addon">
                                 <i class="fa fa-server fa-fw"></i>
                             </span>
-                            <select id="logInstanceSelect" class="form-control">
+                            <select id="logInstanceSelect" class="form-control"
+                                    aria-label="{{ lang._('Instance') }}">
                             </select>
                         </div>
                         <span class="text-muted" style="font-size: 12px;">

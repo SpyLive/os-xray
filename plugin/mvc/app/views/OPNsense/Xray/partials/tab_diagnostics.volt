@@ -8,11 +8,12 @@
                         display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
 
                 {# Instance selector #}
-                <div class="input-group input-group-sm" style="min-width: 200px; width: auto;">
+                <div class="input-group input-group-sm xray-instance-selector">
                     <span class="input-group-addon">
                         <i class="fa fa-server fa-fw"></i>
                     </span>
-                    <select id="diagInstanceSelect" class="form-control">
+                    <select id="diagInstanceSelect" class="form-control"
+                            aria-label="{{ lang._('Instance') }}">
                     </select>
                 </div>
 

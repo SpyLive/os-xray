@@ -1,7 +1,10 @@
 #!/usr/local/bin/php
 <?php
 
+set_include_path('/usr/local/etc/inc' . PATH_SEPARATOR . get_include_path());
 require_once('config.inc');
+require_once __DIR__ . '/xray-config.php';
+require_once __DIR__ . '/xray-apply.php';
 
 // ─── Shared constants (not per-instance) ─────────────────────────────────────
 define('XRAY_BIN',          '/usr/local/bin/xray-core');
@@ -20,17 +23,6 @@ function xray_valid_instance_uuid(string $uuid): bool
     );
 }
 
-function yaml_scalar(string $value): string
-{
-    // Keep simple scalars unchanged; quote everything with YAML-significant
-    // characters. json_encode() produces a valid double-quoted YAML scalar.
-    if ($value !== '' && preg_match('/^[A-Za-z0-9._\/@+\-]+$/D', $value)) {
-        return $value;
-    }
-
-    $encoded = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    return $encoded !== false ? $encoded : '""';
-}
 
 // ─── Per-instance path functions ─────────────────────────────────────────────
 // v3.0.0: все runtime-файлы именуются по UUID инстанса, чтобы N инстансов
@@ -50,10 +42,6 @@ function t2s_conf_path(string $inst_uuid): string
 function t2s_pid_path(string $inst_uuid): string
 {
     return "/var/run/tun2socks_{$inst_uuid}.pid";
-}
-function xray_lock_path(string $inst_uuid): string
-{
-    return "/var/run/xray_start_{$inst_uuid}.lock";
 }
 function xray_stopped_flag(string $inst_uuid): string
 {
@@ -147,29 +135,13 @@ function xray_get_config(string $inst_uuid = ''): array
     if (empty($all)) {
         return [];
     }
-    if ($inst_uuid !== '' && isset($all[$inst_uuid])) {
-        return $all[$inst_uuid];
+    if ($inst_uuid !== '') {
+        return $all[$inst_uuid] ?? [];
     }
     // Возвращаем первый инстанс если UUID не указан
     return reset($all);
 }
 
-// ─── Build routing block from comma-separated CIDR string ────────────────────
-function xray_build_routing(string $bypassRaw): array
-{
-    $bypassNets = array_values(array_filter(array_map('trim', explode(',', $bypassRaw))));
-    if (empty($bypassNets)) {
-        $bypassNets = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
-    }
-    return [
-        'domainStrategy' => 'IPIfNonMatch',
-        'rules' => [[
-            'type'        => 'field',
-            'ip'          => $bypassNets,
-            'outboundTag' => 'direct',
-        ]],
-    ];
-}
 
 // ─── P2.5: xhttp/splithttp compatibility ─────────────────────────────────────
 function xray_normalize_transport(string $json): string
@@ -186,91 +158,6 @@ function xray_normalize_transport(string $json): string
     }
 
     return $json;
-}
-
-// ─── Write xray config.json (per-instance) ───────────────────────────────────
-function xray_write_config(array $c): bool
-{
-    if (!is_dir(XRAY_CONF_DIR) && !mkdir(XRAY_CONF_DIR, 0750, true) && !is_dir(XRAY_CONF_DIR)) {
-        echo "ERROR: cannot create xray config directory\n";
-        return false;
-    }
-
-    $inst_uuid = $c['inst_uuid'];
-    $confFile  = xray_conf_path($inst_uuid);
-
-    $raw = trim($c['outbound_config'] ?? '');
-    if ($raw === '') {
-        echo "ERROR: outbound_config is empty\n";
-        return false;
-    }
-    $outbound = json_decode($raw, true);
-    if (!is_array($outbound) || empty($outbound['protocol'])) {
-        echo "ERROR: outbound_config must be a valid Xray outbound JSON object\n";
-        return false;
-    }
-    $config = [
-        'log'      => ['loglevel' => $c['loglevel'] ?? 'warning'],
-        'inbounds' => [[
-            'tag'      => 'socks-in',
-            'port'     => (int)($c['socks5_port'] ?? 10808),
-            'listen'   => $c['socks5_listen'] ?? '127.0.0.1',
-            'protocol' => 'socks',
-            'settings' => ['auth' => 'noauth', 'udp' => true, 'ip' => $c['socks5_listen'] ?? '127.0.0.1'],
-        ]],
-        'outbounds' => [$outbound, ['tag' => 'direct', 'protocol' => 'freedom']],
-        'routing'   => xray_build_routing($c['bypass_networks'] ?? ''),
-    ];
-    $json = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    if ($json === false) {
-        echo "ERROR: failed to encode xray config JSON\n";
-        return false;
-    }
-    $json = xray_normalize_transport($json);
-
-    $tmpFile = $confFile . '.tmp.' . getmypid();
-    if (file_put_contents($tmpFile, $json, LOCK_EX) === false) {
-        echo "ERROR: failed to write temporary xray config\n";
-        @unlink($tmpFile);
-        return false;
-    }
-    @chmod($tmpFile, 0640);
-    if (!@rename($tmpFile, $confFile)) {
-        echo "ERROR: failed to atomically replace xray config\n";
-        @unlink($tmpFile);
-        return false;
-    }
-    return true;
-}
-
-// ─── Write tun2socks config.yaml (per-instance) ──────────────────────────────
-function t2s_write_config(array $c): bool
-{
-    if (!is_dir(T2S_CONF_DIR) && !mkdir(T2S_CONF_DIR, 0750, true) && !is_dir(T2S_CONF_DIR)) {
-        echo "ERROR: cannot create tun2socks config directory\n";
-        return false;
-    }
-    $inst_uuid = $c['inst_uuid'];
-    $confFile  = t2s_conf_path($inst_uuid);
-    $proxyUri  = 'socks5://' . $c['socks5_listen'] . ':' . $c['socks5_port'];
-    $yaml = 'proxy: ' . yaml_scalar($proxyUri) . "\n"
-          . 'device: ' . yaml_scalar((string)$c['tun_iface']) . "\n"
-          . 'mtu: ' . (int)$c['mtu'] . "\n"
-          . "loglevel: info\n";
-
-    $tmpFile = $confFile . '.tmp.' . getmypid();
-    if (file_put_contents($tmpFile, $yaml, LOCK_EX) === false) {
-        echo "ERROR: failed to write temporary tun2socks config\n";
-        @unlink($tmpFile);
-        return false;
-    }
-    @chmod($tmpFile, 0640);
-    if (!@rename($tmpFile, $confFile)) {
-        echo "ERROR: failed to atomically replace tun2socks config\n";
-        @unlink($tmpFile);
-        return false;
-    }
-    return true;
 }
 
 // NativeTun reports its actual owner even when a daemon PID file is missing.
@@ -291,6 +178,18 @@ function tun_owned_by_instance(string $iface, string $uuid): bool
     $command = trim((string)shell_exec('/bin/ps -ww -o command= -p ' . $pid . ' 2>/dev/null'));
     return strpos($command, T2S_BIN) !== false &&
            strpos($command, t2s_conf_path($uuid)) !== false;
+}
+
+// Used only when runtime files cannot identify the old interface. Read-only scan.
+function xray_owned_tuns(string $uuid): ?array
+{
+    exec('/sbin/ifconfig -l 2>/dev/null', $out, $rc);
+    if ($rc !== 0) return null;
+    $owned = [];
+    foreach (preg_split('/\s+/', trim(implode(' ', $out))) as $iface) {
+        if (tun_owned_by_instance($iface, $uuid)) $owned[] = $iface;
+    }
+    return $owned;
 }
 
 function tun_wait_unowned(string $iface, int $oldOwner = 0): bool
@@ -315,6 +214,19 @@ function xray_socks_conflict(string $listenA, int $portA, string $listenB, int $
 }
 
 // ─── PID helpers (FreeBSD: no posix extension — use /bin/kill) ───────────────
+function proc_matches_instance(string $pidfile, int $pid): ?bool
+{
+    if (!preg_match('/^(xray_core|tun2socks)_([0-9a-fA-F-]{36})\.pid$/D',basename($pidfile),$m)) return false;
+    $uuid=$m[2];
+    if (!xray_valid_instance_uuid($uuid)) return false;
+    $bin=$m[1] === 'xray_core' ? XRAY_BIN : T2S_BIN;
+    $conf=$m[1] === 'xray_core' ? xray_conf_path($uuid) : t2s_conf_path($uuid);
+    $command=trim((string)shell_exec('/bin/ps -ww -o command= -p '.$pid.' 2>/dev/null'));
+    // Missing ps output is uncertainty, not proof of an unrelated/dead process.
+    if ($command === '') return null;
+    return strpos($command,$bin) !== false && strpos($command,$conf) !== false;
+}
+
 function proc_is_running(string $pidfile): bool
 {
     if (!file_exists($pidfile)) {
@@ -325,7 +237,7 @@ function proc_is_running(string $pidfile): bool
         return false;
     }
     exec('/bin/kill -0 ' . $pid . ' 2>/dev/null', $out, $rc);
-    return $rc === 0;
+    return $rc === 0 && proc_matches_instance($pidfile,$pid);
 }
 
 function proc_kill(string $pidfile): bool
@@ -341,8 +253,12 @@ function proc_kill(string $pidfile): bool
         @unlink($pidfile);
         return true;
     }
-    $comm = trim((string)shell_exec('ps -o comm= -p ' . $pid . ' 2>/dev/null'));
-    if ($comm === '' || (strpos($comm, 'xray') === false && strpos($comm, 'tun2socks') === false)) {
+    $matches = proc_matches_instance($pidfile, $pid);
+    if ($matches === null) {
+        echo "ERROR: Cannot confirm process identity for PID {$pid}; no signal sent.\n";
+        return false;
+    }
+    if (!$matches) {
         // PID reuse: leave the unrelated process untouched, forget the stale file.
         echo "WARNING: stale PID file {$pidfile} points to an unrelated process.\n";
         @unlink($pidfile);
@@ -355,6 +271,17 @@ function proc_kill(string $pidfile): bool
         if ($rc !== 0) break;
     }
     if ($rc === 0) {
+        // Narrow the PID-reuse window before escalation; numeric PIDs cannot
+        // provide an atomic identity-and-signal guarantee.
+        $matches = proc_matches_instance($pidfile, $pid);
+        if ($matches === null) {
+            echo "ERROR: Cannot reconfirm process identity for PID {$pid}; no KILL sent.\n";
+            return false;
+        }
+        if (!$matches) {
+            @unlink($pidfile);
+            return true;
+        }
         exec('/bin/kill -KILL ' . $pid . ' 2>/dev/null');
         for ($i = 0; $i < 20; $i++) {
             usleep(100000);
@@ -370,61 +297,27 @@ function proc_kill(string $pidfile): bool
     return true;
 }
 
-function proc_start(string $bin, string $args, string $pidfile, string $logfile = ''): void
+function proc_start(string $bin, string $args, string $pidfile, string $logfile = ''): bool
 {
-    // BUG-7 FIX: stderr демона → XRAY_DAEMON_LOG вместо /dev/null
+    // daemon(8) detaches itself; do not add an untracked background shell.
     $log = escapeshellarg($logfile !== '' ? $logfile : XRAY_DAEMON_LOG);
     exec('/usr/sbin/daemon -p ' . escapeshellarg($pidfile)
-       . ' ' . escapeshellarg($bin) . ' ' . $args . ' >> ' . $log . ' 2>&1 &');
-}
-
-// ─── Per-instance lock helpers ────────────────────────────────────────────────
-/**
- * Захватывает эксклюзивный non-blocking lock для конкретного инстанса.
- * Возвращает дескриптор при успехе, false если lock уже захвачен.
- * Вызывающий ОБЯЗАН вызвать lock_release($fd, $inst_uuid) после завершения.
- *
- * @return resource|false
- */
-function lock_acquire(string $inst_uuid)
-{
-    $lockPath = xray_lock_path($inst_uuid);
-    $fd = fopen($lockPath, 'c');
-    if ($fd === false) {
-        return false;
-    }
-    if (!flock($fd, LOCK_EX | LOCK_NB)) {
-        fclose($fd);
-        return false;
-    }
-    fwrite($fd, (string)getmypid());
-    fflush($fd);
-    return $fd;
-}
-
-/**
- * Освобождает lock инстанса, закрывает дескриптор, удаляет lock-файл.
- *
- * @param resource $fd
- */
-function lock_release($fd, string $inst_uuid): void
-{
-    flock($fd, LOCK_UN);
-    fclose($fd);
-    @unlink(xray_lock_path($inst_uuid));
+       . ' ' . escapeshellarg($bin) . ' ' . $args . ' >> ' . $log . ' 2>&1', $out, $rc);
+    return $rc === 0;
 }
 
 // ─── BUG-3 FIX: config validation before start ──────────────────────────────
 function xray_validate_config(string $confFile): bool
 {
-    if (!file_exists(XRAY_BIN)) {
-        return true;
+    if (!is_executable(XRAY_BIN)) {
+        echo "ERROR: xray-core is unavailable; candidate was not validated.\n";
+        return false;
     }
     if (!file_exists($confFile)) {
         echo "ERROR: config file not found after write: {$confFile}\n";
         return false;
     }
-    exec(escapeshellarg(XRAY_BIN) . ' run -test -c ' . escapeshellarg($confFile) . ' 2>&1', $out, $rc);
+    exec(escapeshellarg(XRAY_BIN) . ' run -test -c ' . escapeshellarg($confFile) . ' -format=json 2>&1', $out, $rc);
     if ($rc !== 0) {
         echo "ERROR: xray config validation failed:\n" . implode("\n", $out) . "\n";
         return false;
@@ -480,158 +373,85 @@ function lo0_alias_remove(string $addr): void
 /**
  * do_stop() — останавливает tun2socks и xray-core инстанса, выставляет stopped flag.
  */
-function do_stop(string $inst_uuid, ?string $tunIface = null): bool
+function do_stop(string $inst_uuid, ?string $tunIface = null, bool $administrative = true): bool
 {
-    if ($tunIface === null) {
-        $c        = xray_get_config($inst_uuid);
-        $tunIface = $c['tun_iface'] ?? 'proxytun2socks0';
-    }
+    $beforeXray = proc_is_running(xray_pid_path($inst_uuid));
+    $beforeT2s = proc_is_running(t2s_pid_path($inst_uuid));
+    try {
+        if ($administrative && !xray_atomic_write(xray_stopped_flag($inst_uuid), date('c'))) return false;
+        if ($tunIface === '') {
+            // Corrupt/missing files: PID command identity remains independent of file contents.
+            $ifaces = xray_owned_tuns($inst_uuid);
+            @unlink(xray_applied_hash_path($inst_uuid));
+            if (!proc_kill(t2s_pid_path($inst_uuid))) return false;
+            if (!proc_kill(xray_pid_path($inst_uuid))) return false;
+            if ($ifaces === null) {
+                echo "ERROR: Cannot confirm TUN ownership after Stop for {$inst_uuid}\n";
+                return false;
+            }
+            foreach ($ifaces as $iface) {
+                if (!tun_wait_unowned($iface)) return false;
+            }
+            echo "Stopped identified processes for {$inst_uuid}.\n";
+            return true;
+        }
+        if ($tunIface === null) {
+            $c        = xray_get_config($inst_uuid);
+            $tunIface = $c['tun_iface'] ?? 'proxytun2socks0';
+        }
 
-    // Never explicitly destroy an OPNsense-assigned TUN here.  tun2socks owns
-    // its FreeBSD NativeTun handle; destroying the interface while that handle
-    // remains open can block forever inside kernel tun_destroy (FreeBSD 15.1).
-    // A disabled profile sharing this TUN must never stop its active owner.
-    if (!proc_is_running(t2s_pid_path($inst_uuid))
-        && !proc_is_running(xray_pid_path($inst_uuid))) {
-        // A missing PID file is not proof that this instance released NativeTun.
-        // Do not silently mark it stopped while its real process owns the TUN.
-        if (tun_owned_by_instance($tunIface, $inst_uuid)) {
-            echo "ERROR: Instance {$inst_uuid} still owns TUN {$tunIface} without a usable PID file.\n";
+        // Never explicitly destroy an OPNsense-assigned TUN here.  tun2socks owns
+        // its FreeBSD NativeTun handle; destroying the interface while that handle
+        // remains open can block forever inside kernel tun_destroy (FreeBSD 15.1).
+        // A disabled profile sharing this TUN must never stop its active owner.
+        if (!proc_is_running(t2s_pid_path($inst_uuid))
+            && !proc_is_running(xray_pid_path($inst_uuid))) {
+            // An unreadable identity must not be mistaken for an absent process.
+            foreach ([t2s_pid_path($inst_uuid), xray_pid_path($inst_uuid)] as $pidfile) {
+                if (is_file($pidfile) && !proc_kill($pidfile)) return false;
+            }
+            // A missing PID file is not proof that this instance released NativeTun.
+            // Do not silently mark it stopped while its real process owns the TUN.
+            if (tun_owned_by_instance($tunIface, $inst_uuid)) {
+                echo "ERROR: Instance {$inst_uuid} still owns TUN {$tunIface} without a usable PID file.\n";
+                return false;
+            }
+            @unlink(xray_applied_hash_path($inst_uuid));
+
+            echo "Already stopped.\n";
+            return true;
+        }
+        $ownerBefore = tun_owner_pid($tunIface);
+        if ($ownerBefore > 0 && !tun_owned_by_instance($tunIface, $inst_uuid)) {
+            echo "ERROR: TUN {$tunIface} belongs to a different instance (PID {$ownerBefore}).\n";
             return false;
         }
         @unlink(xray_applied_hash_path($inst_uuid));
-        file_put_contents(xray_stopped_flag($inst_uuid), date('Y-m-d H:i:s'));
-        echo "Already stopped.\n";
-        return true;
-    }
-    $ownerBefore = tun_owner_pid($tunIface);
-    if ($ownerBefore > 0 && !tun_owned_by_instance($tunIface, $inst_uuid)) {
-        echo "ERROR: TUN {$tunIface} belongs to a different instance (PID {$ownerBefore}).\n";
-        return false;
-    }
-    if (!proc_kill(t2s_pid_path($inst_uuid))) return false;
-    // Missing/stale PID files are not evidence that NativeTun was released.
-    // Never terminate an unrelated TUN owner; abort safely instead.
-    if ($ownerBefore > 0 && !tun_wait_unowned($tunIface, $ownerBefore)) return false;
+        if (!proc_kill(t2s_pid_path($inst_uuid))) return false;
+        // Missing/stale PID files are not evidence that NativeTun was released.
+        // Never terminate an unrelated TUN owner; abort safely instead.
+        if ($ownerBefore > 0 && !tun_wait_unowned($tunIface, $ownerBefore)) return false;
 
-    // Останавливаем xray-core
-    if (!proc_kill(xray_pid_path($inst_uuid))) return false;
+        // Останавливаем xray-core
+        if (!proc_kill(xray_pid_path($inst_uuid))) return false;
 
-    // Удаляем lo0 alias если был добавлен
-    $c2 = xray_get_config($inst_uuid);
-    lo0_alias_remove($c2['socks5_listen'] ?? '127.0.0.1');
+        // Keep shared aliases when stopping one instance.
+        // Loopback aliases may be shared by independent instances; keep them.
 
-    // БАГ-5 FIX: флаг намеренной остановки — watchdog не перезапускает
-    @unlink(xray_applied_hash_path($inst_uuid));
-    file_put_contents(xray_stopped_flag($inst_uuid), date('Y-m-d H:i:s'));
+        // Only administrative Stop sets the flag; emergency cleanup preserves intent.
+        @unlink(xray_applied_hash_path($inst_uuid));
 
-    echo "Stopped.\n";
-    return true;
-}
 
-/**
- * do_start() — генерирует конфиги, запускает xray-core и tun2socks инстанса.
- */
-function do_start(array $c): bool
-{
-    if (!file_exists(XRAY_BIN)) {
-        echo "ERROR: xray-core not found at " . XRAY_BIN . "\n";
-        return false;
-    }
-    if (!file_exists(T2S_BIN)) {
-        echo "ERROR: tun2socks not found at " . T2S_BIN . "\n";
-        return false;
-    }
-
-    $inst_uuid = $c['inst_uuid'];
-    $owner = tun_owner_pid($c['tun_iface']);
-    if ($owner !== 0 && !tun_owned_by_instance($c['tun_iface'], $inst_uuid)) {
-        echo "ERROR: TUN {$c['tun_iface']} has owner PID {$owner}; refusing competing start.\n";
-        return false;
-    }
-    foreach (xray_get_all_instances() as $otherUuid => $other) {
-        if ($otherUuid !== $inst_uuid && $other['tun_iface'] === $c['tun_iface']
-            && proc_is_running(t2s_pid_path($otherUuid))) {
-            echo "ERROR: TUN {$c['tun_iface']} is already used by instance {$otherUuid}.\n";
-            return false;
-        }
-    }
-
-    // B7: захватываем per-instance lock перед запуском
-    $lock = lock_acquire($inst_uuid);
-    if ($lock === false) {
-        echo "INFO: Another start is already in progress for instance {$inst_uuid} (lock held). Skipping.\n";
-        return true;
-    }
-
-    try {
-        // БАГ-5 FIX: снимаем флаг намеренной остановки
-        @unlink(xray_stopped_flag($inst_uuid));
-
-        if (!xray_write_config($c)) {
-            return false;
-        }
-        if (!t2s_write_config($c)) {
-            return false;
-        }
-
-        lo0_alias_ensure($c['socks5_listen']);
-
-        // BUG-3 FIX: валидация конфига до запуска
-        if (!xray_validate_config(xray_conf_path($inst_uuid))) {
-            return false;
-        }
-
-        $instLog = xray_instance_log($inst_uuid);
-        if (!proc_is_running(xray_pid_path($inst_uuid))) {
-            proc_start(XRAY_BIN, 'run -c ' . escapeshellarg(xray_conf_path($inst_uuid)), xray_pid_path($inst_uuid), $instLog);
-            usleep(800000);
-        }
-        if (!proc_is_running(xray_pid_path($inst_uuid))) {
-            echo "ERROR: xray-core failed to start for {$inst_uuid}.\n";
-            return false;
-        }
-        if (!proc_is_running(t2s_pid_path($inst_uuid))) {
-            proc_start(T2S_BIN, '--config ' . escapeshellarg(t2s_conf_path($inst_uuid)), t2s_pid_path($inst_uuid), $instLog);
-        }
-        $ready = false;
-        for ($i = 0; $i < 30; $i++) {
-            if (proc_is_running(t2s_pid_path($inst_uuid))
-                && tun_owned_by_instance($c['tun_iface'], $inst_uuid)) {
-                $ready = true;
-                break;
-            }
-            usleep(100000);
-        }
-        if (!$ready) {
-            echo "ERROR: tun2socks did not acquire TUN {$c['tun_iface']} for {$inst_uuid}.\n";
-            return false;
-        }
-
-        // Set TUN address synchronously before reporting Started/OK.
-        // Do NOT wait for the full syshook here: its configctl filter/interface
-        // reloads can re-enter configd while Apply holds the global lock.
-        $hook = '/bin/sh /usr/local/etc/rc.syshook.d/start/50-xray ' . escapeshellarg($inst_uuid);
-        $tunOutput = [];
-        exec($hook . ' --tun-only 2>&1', $tunOutput, $tunRc);
-        if ($tunRc !== 0) {
-            echo "ERROR: TUN address setup failed for {$inst_uuid} (exit {$tunRc}): "
-                . implode(" | ", $tunOutput) . "\n";
-            return false;
-        }
-        // Background firewall/interface reload follows the verified TUN setup.
-        exec($hook . ' >/dev/null 2>&1 &');
-
-        if (file_put_contents(xray_applied_hash_path($inst_uuid), xray_instance_hash($c), LOCK_EX) === false) {
-            echo "WARNING: Could not record applied config hash for {$inst_uuid}.\n";
-        }
-        echo "Started.\n";
+        echo "Stopped.\n";
         return true;
     } finally {
-        // B7: освобождаем lock гарантированно (даже при исключении)
-        lock_release($lock, $inst_uuid);
+        if ($beforeXray !== proc_is_running(xray_pid_path($inst_uuid)) ||
+            $beforeT2s !== proc_is_running(t2s_pid_path($inst_uuid))) {
+            $GLOBALS['xray_runtime_changed'] = true;
+        }
     }
 }
+
 
 function do_status(string $inst_uuid = ''): void
 {
@@ -643,6 +463,7 @@ function do_status(string $inst_uuid = ''): void
             'xray_core'   => $xray ? 'running' : 'stopped',
             'tun2socks'   => $t2s  ? 'running' : 'stopped',
             'inst_uuid'   => $inst_uuid,
+            'network_state' => is_file(xray_applied_hash_path($inst_uuid)) ? 'applied' : 'unconfirmed',
         ]) . "\n";
         return;
     }
@@ -662,6 +483,7 @@ function do_status(string $inst_uuid = ''): void
         'status'    => ($xray && $t2s) ? 'ok' : 'stopped',
         'xray_core' => $xray ? 'running' : 'stopped',
         'tun2socks' => $t2s  ? 'running' : 'stopped',
+        'network_state' => is_file(xray_applied_hash_path($uuid0)) ? 'applied' : 'unconfirmed',
     ]) . "\n";
 }
 
@@ -677,29 +499,40 @@ function do_status_all(): void
             'status'    => ($xray && $t2s) ? 'ok' : 'stopped',
             'xray_core' => $xray ? 'running' : 'stopped',
             'tun2socks' => $t2s  ? 'running' : 'stopped',
+            'network_state' => is_file(xray_applied_hash_path($inst_uuid)) ? 'applied' : 'unconfirmed',
         ];
     }
     echo json_encode($result) . "\n";
+}
+
+// A bounded, secret-free summary shared by the boot syshook and plugin hook.
+// Replace the previous event; never persist raw validator/controller output.
+function xray_boot_log(string $state): void
+{
+    $entry = gmdate('[Y-m-d H:i:s UTC]') . " Xray boot: {$state}\n";
+    if (!xray_atomic_write('/tmp/xray_syshook.log', $entry)) {
+        echo "WARNING: Cannot update Xray Boot log\n";
+    }
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 $action    = $argv[1] ?? 'status';
 $inst_uuid = isset($argv[2]) ? trim($argv[2]) : '';
 
-// Базовая санитизация UUID аргумента
-// configd передаёт литерал "%1" когда аргумент не указан — отбрасываем
-if ($inst_uuid !== '') {
-    $inst_uuid = preg_replace('/[^0-9a-fA-F\-]/', '', $inst_uuid);
-    // UUID должен быть минимум 32 hex-символа + 4 дефиса = 36 символов
-    if (strlen($inst_uuid) < 36) {
-        $inst_uuid = '';
-    }
+// configd uses a literal placeholder when no UUID argument is supplied.
+if (in_array($inst_uuid, ['%1', '%s'], true)) $inst_uuid = '';
+if ($inst_uuid !== '' && !xray_valid_instance_uuid($inst_uuid)) {
+    echo "ERROR: Invalid instance UUID\n";
+    exit(1);
 }
 
 // Serialize all service mutations across profiles sharing a TUN.
-if (in_array($action, ['start', 'stop', 'restart', 'reconfigure'], true)) {
+if (in_array($action, ['start', 'stop', 'restart', 'reconfigure', 'boot', 'watchdog'], true)) {
     $globalLock = fopen('/var/run/xray_service_operation.lock', 'ce');
     if ($globalLock === false || !flock($globalLock, LOCK_EX | LOCK_NB)) {
+        // Atomic log replacement takes no operation lock. Concurrent boot writers
+        // publish complete records; the last publication remains visible.
+        if ($action === 'boot') xray_boot_log('failed; operation lock unavailable');
         echo "ERROR: Another Xray service operation is in progress.\n";
         exit(1);
     }
@@ -707,157 +540,26 @@ if (in_array($action, ['start', 'stop', 'restart', 'reconfigure'], true)) {
 
 switch ($action) {
     case 'start':
-        if ($inst_uuid !== '') {
-            $c = xray_get_config($inst_uuid);
-            if (empty($c) || !$c['enabled']) {
-                echo "Xray is disabled or instance not found.\n";
-                exit(0);
-            }
-            $ok = do_start($c);
-            exit($ok ? 0 : 1);
-        }
-        // Запускаем все включённые инстансы
-        $all = xray_get_all_instances();
-        if (empty($all)) {
-            echo "No instances configured.\n";
-            exit(0);
-        }
-        $anyFailed = false;
-        foreach ($all as $uuid => $c) {
-            if (!$c['enabled']) continue;
-            if (!do_start($c)) {
-                $anyFailed = true;
-            }
-        }
-        exit($anyFailed ? 1 : 0);
-
     case 'stop':
-        if ($inst_uuid !== '') {
-            if (!do_stop($inst_uuid)) exit(1);
-        } else {
-            foreach (array_keys(xray_get_all_instances()) as $uuid) {
-                if (!do_stop($uuid)) exit(1);
-            }
-        }
-        break;
-
     case 'restart':
-        if ($inst_uuid !== '') {
-            $c        = xray_get_config($inst_uuid);
-            $tunIface = $c['tun_iface'] ?? 'proxytun2socks0';
-            if (!do_stop($inst_uuid, $tunIface)) exit(1);
-            sleep(1);
-            if (!empty($c) && $c['enabled']) {
-                $ok = do_start($c);
-                exit($ok ? 0 : 1);
-            }
-            exit(0);
-        }
-
-        $all = xray_get_all_instances();
-        foreach ($all as $uuid => $c) {
-            $tunIface = $c['tun_iface'] ?? 'proxytun2socks0';
-            if (!do_stop($uuid, $tunIface)) exit(1);
-        }
-        sleep(1);
-        $anyFailed = false;
-        foreach ($all as $uuid => $c) {
-            if ($c['enabled'] && !do_start($c)) {
-                $anyFailed = true;
-            }
-        }
-        exit($anyFailed ? 1 : 0);
-
     case 'reconfigure':
-        // B10: возвращаем реальный статус
-        if ($inst_uuid !== '') {
-            $c        = xray_get_config($inst_uuid);
-            $tunIface = $c['tun_iface'] ?? 'proxytun2socks0';
-            if (!do_stop($inst_uuid, $tunIface)) exit(1);
-            sleep(1);
-            if (!empty($c) && $c['enabled']) {
-                $ok = do_start($c);
-                if ($ok) {
-                    echo "OK\n";
-                    exit(0);
-                } else {
-                    echo "ERROR: Failed to start Xray services for instance {$inst_uuid}.\n";
-                    exit(1);
-                }
-            } else {
-                echo "Xray disabled — services stopped.\n";
-                exit(0);
-            }
+    case 'boot':
+    case 'watchdog':
+        if ($action === 'boot') xray_boot_log('started');
+        try {
+            $ok = xray_apply_action($action, $inst_uuid);
+        } catch (Throwable $e) {
+            echo "ERROR: " . $e->getMessage() . "\n";
+            $ok = false;
         }
-        // Без UUID: prevent two enabled instances from claiming one TUN.
-        // Validate before stopping anything, so a conflicting configuration
-        // cannot interrupt the currently working tunnel.
-        $all = xray_get_all_instances();
-        $enabledIfaces = [];
-        $enabledSocks = [];
-        foreach ($all as $uuid => $c) {
-            if (!$c['enabled']) continue;
-            $iface = $c['tun_iface'];
-            if (isset($enabledIfaces[$iface])) {
-                echo "ERROR: TUN {$iface} is enabled for multiple instances ({$enabledIfaces[$iface]}, {$uuid}). Disable one before Apply.\n";
-                exit(1);
-            }
-            $enabledIfaces[$iface] = $uuid;
-            foreach ($enabledSocks as $previous) {
-                if (xray_socks_conflict($c['socks5_listen'], (int)$c['socks5_port'],
-                    $previous['socks5_listen'], (int)$previous['socks5_port'])) {
-                    echo "ERROR: SOCKS listener conflict between {$uuid} and {$previous['inst_uuid']}.\n";
-                    exit(1);
-                }
-            }
-            $enabledSocks[] = $c;
+        // Successful independent changes and rollback also need a reload when
+        // another instance failed. Never wait for configd while holding its lock.
+        if (!empty($GLOBALS['xray_runtime_changed'])) {
+            exec('/bin/sh /usr/local/etc/rc.syshook.d/start/50-xray --reload-only >/dev/null 2>&1 &');
         }
-
-        $allStopped = [];
-        foreach ($all as $uuid => $c) {
-            // Disabled/stopped instances must not interfere with the active
-            // instance, especially when all profiles share the same TUN.
-            $running = proc_is_running(t2s_pid_path($uuid)) || proc_is_running(xray_pid_path($uuid));
-            $hashFile = xray_applied_hash_path($uuid);
-            $unchanged = $c['enabled'] && $running
-                && proc_is_running(t2s_pid_path($uuid))
-                && proc_is_running(xray_pid_path($uuid))
-                && tun_owned_by_instance($c['tun_iface'], $uuid)
-                && is_file($hashFile)
-                && hash_equals(xray_instance_hash($c), trim((string)file_get_contents($hashFile)));
-            if ($unchanged) {
-                echo "INFO: Instance {$uuid} already running with unchanged configuration.\n";
-                continue;
-            }
-            if ($running) {
-                if (!do_stop($uuid, $c['tun_iface'] ?? 'proxytun2socks0')) {
-                    echo "ERROR: Cannot stop instance {$uuid}; Apply aborted.\n";
-                    exit(1);
-                }
-            }
-            $allStopped[$uuid] = $c;
-        }
-        sleep(1);
-        $anyFailed = false;
-        foreach ($allStopped as $uuid => $c) {
-            if ($c['enabled'] && !(
-                proc_is_running(t2s_pid_path($uuid))
-                && proc_is_running(xray_pid_path($uuid))
-                && tun_owned_by_instance($c['tun_iface'], $uuid)
-                && is_file(xray_applied_hash_path($uuid))
-                && hash_equals(xray_instance_hash($c), trim((string)file_get_contents(xray_applied_hash_path($uuid))))
-            )) {
-                if (!do_start($c)) {
-                    $anyFailed = true;
-                }
-            }
-        }
-        if ($anyFailed) {
-            echo "ERROR: One or more instances failed to start.\n";
-            exit(1);
-        }
-        echo "OK\n";
-        exit(0);
+        if ($action === 'boot') xray_boot_log($ok ? 'completed' : 'failed; inspect controller output and per-instance logs');
+        echo $ok ? "OK\n" : "ERROR: One or more Xray operations failed; inspect preceding diagnostics.\n";
+        exit($ok ? 0 : 1);
 
     case 'status':
         do_status($inst_uuid);
@@ -868,55 +570,14 @@ switch ($action) {
         break;
 
     case 'validate':
-        // БАГ-6 FIX: сухой прогон через временный файл (рабочий конфиг не перезаписывается)
-        $c = $inst_uuid !== '' ? xray_get_config($inst_uuid) : xray_get_config();
-        if (empty($c)) {
-            echo "ERROR: No xray config found in OPNsense config.xml\n";
+        $c = xray_get_config($inst_uuid);
+        $candidate = $c ? xray_prepare_candidate($c) : null;
+        if ($candidate === null) {
+            echo "ERROR: No valid candidate configuration\n";
             exit(1);
         }
-        $tmpBase = tempnam('/tmp', 'xray-validate-');
-        if ($tmpBase === false) {
-            echo "ERROR: Cannot create temp file for validation\n";
-            exit(1);
-        }
-        $tmpConf = $tmpBase . '.json';
-        @unlink($tmpBase);
-        try {
-            $raw = trim($c['outbound_config'] ?? '');
-            if ($raw === '') {
-                echo "ERROR: outbound_config is empty\n";
-                exit(1);
-            }
-            $outbound = json_decode($raw, true);
-            if ($outbound === null) {
-                echo "ERROR: outbound_config is not valid JSON\n";
-                exit(1);
-            }
-            $config = [
-                'log'      => ['loglevel' => $c['loglevel'] ?? 'warning'],
-                'inbounds' => [[
-                    'tag'      => 'socks-in',
-                    'port'     => (int)($c['socks5_port'] ?? 10808),
-                    'listen'   => $c['socks5_listen'] ?? '127.0.0.1',
-                    'protocol' => 'socks',
-                    'settings' => ['auth' => 'noauth', 'udp' => true, 'ip' => $c['socks5_listen'] ?? '127.0.0.1'],
-                ]],
-                'outbounds' => [$outbound, ['tag' => 'direct', 'protocol' => 'freedom']],
-                'routing'   => xray_build_routing($c['bypass_networks'] ?? ''),
-            ];
-            $json = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-            $json = xray_normalize_transport($json);
-            file_put_contents($tmpConf, $json);
-            chmod($tmpConf, 0600);
-            if (xray_validate_config($tmpConf)) {
-                echo "OK: config is valid\n";
-                exit(0);
-            } else {
-                exit(1);
-            }
-        } finally {
-            @unlink($tmpConf);
-        }
+        echo "OK: config is valid\n";
+        exit(0);
 
     case 'version':
         $ver = file_exists(XRAY_VERSION_FILE) ? trim(file_get_contents(XRAY_VERSION_FILE)) : 'unknown';

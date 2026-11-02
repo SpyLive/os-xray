@@ -40,7 +40,7 @@ function tun_wait_unowned($iface, $owner = 0) {
     $GLOBALS['events'][] = 'wait';
     return $GLOBALS['kill_success'];
 }
-function lo0_alias_remove($ip) { $GLOBALS['events'][] = 'alias'; }
+function xray_atomic_write($path,$bytes) { return file_put_contents($path,$bytes)!==false; }
 function verify($condition, $message) {
     if (!$condition) { fwrite(STDERR, "FAIL: $message\n"); exit(1); }
 }
@@ -56,7 +56,7 @@ verify(is_file(xray_stopped_flag('A')), 'A must be marked stopped');
 $alive = ['t2s_C' => true, 'xray_C' => true]; $owned = true; $events = [];
 ob_start(); $ok = do_stop('C', 'proxytun2socks0'); ob_end_clean();
 verify($ok, 'Stop C should succeed');
-verify($events === ['t2s_C', 'wait', 'xray_C', 'alias'], 'Stop C sequencing');
+verify($events === ['t2s_C', 'wait', 'xray_C'], 'Stop C sequencing');
 
 // A missing PID file does not mean an owning tun2socks has stopped.
 $alive = []; $owner = 71698; $owned = true; $events = [];

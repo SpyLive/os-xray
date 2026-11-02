@@ -50,10 +50,25 @@ install_tree() {
         install -d "$dst/$rel"
     done
     (cd "$src" && find . -type f -print) | while IFS= read -r rel; do
-        install -m "$mode" "$src/$rel" "$dst/$rel"
+        staged=$(mktemp "$(dirname "$dst/$rel")/.xray-install.XXXXXXXX") || exit 1
+        install -m "$mode" "$src/$rel" "$staged" || exit 1
+        mv -f "$staged" "$dst/$rel" || exit 1
     done
 }
-install_tree "$SRC/scripts/Xray" /usr/local/opnsense/scripts/Xray 0755
+# Publish dependencies before their consumer; existing daemons keep running.
+SCRIPT_DST=/usr/local/opnsense/scripts/Xray
+install -d "$SCRIPT_DST"
+for module in xray-config.php xray-apply.php; do
+    staged=$(mktemp "$SCRIPT_DST/.xray-module.XXXXXXXX") || exit 1
+    install -m 0755 "$SRC/scripts/Xray/$module" "$staged" || exit 1
+    mv -f "$staged" "$SCRIPT_DST/$module" || exit 1
+done
+for script in "$SRC/scripts/Xray/"*; do
+    case "$script" in */xray-config.php|*/xray-apply.php) continue;; esac
+    staged=$(mktemp "$SCRIPT_DST/.xray-script.XXXXXXXX") || exit 1
+    install -m 0755 "$script" "$staged" || exit 1
+    mv -f "$staged" "$SCRIPT_DST/$(basename "$script")" || exit 1
+done
 install_tree "$SRC/service/conf/actions.d" /usr/local/opnsense/service/conf/actions.d 0644
 install_tree "$SRC/mvc/app/models/OPNsense/Xray" /usr/local/opnsense/mvc/app/models/OPNsense/Xray 0644
 install_tree "$SRC/mvc/app/controllers/OPNsense/Xray" /usr/local/opnsense/mvc/app/controllers/OPNsense/Xray 0644

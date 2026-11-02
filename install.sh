@@ -60,7 +60,7 @@ download_verified() {
 # ─────────────────────────────────────────────────────────────────────────────
 if [ "${1:-}" = "uninstall" ]; then
     echo "==> Stopping services..."
-    /usr/local/opnsense/scripts/Xray/xray-service-control.php stop 2>/dev/null || true
+    /usr/local/opnsense/scripts/Xray/xray-service-control.php stop || die "Stop failed; keep controller and inspect processes before uninstall"
 
     echo "==> Cleaning runtime files..."
     # v2.0.0: per-instance PID, lock, flag, config files
@@ -73,6 +73,7 @@ if [ "${1:-}" = "uninstall" ]; then
     rm -f /var/run/xray_start.lock /var/run/xray_stopped.flag
 
     echo "==> Removing plugin files..."
+    rm -f /usr/local/opnsense/scripts/Xray/xray-config.php /usr/local/opnsense/scripts/Xray/xray-apply.php
     rm -f  /usr/local/opnsense/scripts/Xray/xray-service-control.php
     rm -f  /usr/local/opnsense/scripts/Xray/xray-testconnect.php
     rm -f  /usr/local/opnsense/scripts/Xray/xray-watchdog.php
@@ -151,7 +152,7 @@ detect_existing() {
 
     # PHP парсит оба файла и пишет shell-присваивания в tmpfile.
     # Tmpfile сорсится в текущем shell — переменные видны после return.
-    _DET_TMP="/tmp/.xray_detect_$$.sh"
+    _DET_TMP=$(mktemp /tmp/xray-detect.XXXXXXXX) || die "Cannot create detection file"
 
     _XRAY_JSON="$XRAY_JSON" _T2S_YAML="$T2S_YAML" \
     php -r '
@@ -473,7 +474,10 @@ install_tree() {
     done
     find "$_src" -type f | while IFS= read -r _file; do
         _rel="${_file#$_src}"
-        install -m "$_fmode" "$_file" "${_dst}${_rel}"
+        _target="${_dst}${_rel}"
+        _staged=$(mktemp "$(dirname "$_target")/.xray-install.XXXXXXXX") || exit 1
+        install -m "$_fmode" "$_file" "$_staged" || exit 1
+        mv -f "$_staged" "$_target" || exit 1
     done
 }
 
@@ -669,8 +673,20 @@ echo "==> Step 3: Installing plugin files..."
 
 # PHP-scripts (executable)
 install -d /usr/local/opnsense/scripts/Xray
-install_tree "$PLUGIN_DIR/scripts/Xray" \
-             "/usr/local/opnsense/scripts/Xray" 0755
+# Publish dependencies before their consumer; existing daemons keep running.
+SCRIPT_DST=/usr/local/opnsense/scripts/Xray
+install -d "$SCRIPT_DST"
+for module in xray-config.php xray-apply.php; do
+    staged=$(mktemp "$SCRIPT_DST/.xray-module.XXXXXXXX") || exit 1
+    install -m 0755 "$PLUGIN_DIR/scripts/Xray/$module" "$staged" || exit 1
+    mv -f "$staged" "$SCRIPT_DST/$module" || exit 1
+done
+for script in "$PLUGIN_DIR/scripts/Xray/"*; do
+    case "$script" in */xray-config.php|*/xray-apply.php) continue;; esac
+    staged=$(mktemp "$SCRIPT_DST/.xray-script.XXXXXXXX") || exit 1
+    install -m 0755 "$script" "$staged" || exit 1
+    mv -f "$staged" "$SCRIPT_DST/$(basename "$script")" || exit 1
+done
 
 # configd actions
 install -d /usr/local/opnsense/service/conf/actions.d
