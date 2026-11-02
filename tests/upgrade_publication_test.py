@@ -12,7 +12,9 @@ ROOT=Path(__file__).resolve().parents[1]
 for filename, variable in [('install.sh','PLUGIN_DIR'),('upgrade.sh','SRC')]:
     source=(ROOT/filename).read_text()
     start=source.index('# Publish dependencies before their consumer')
-    end=source.index('\ninstall_tree ',start)
+    # Stop at the script publication loop, before any system installation steps.
+    scripts=source.index('\nfor script in ',start)
+    end=source.index('\ndone\n',scripts)+len('\ndone\n')
     publication=source[start:end]
     count=len(list((ROOT/'plugin/scripts/Xray').iterdir()))
     for fail in range(1,count+2):
