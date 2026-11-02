@@ -20,7 +20,7 @@ jobs:
           release: "15.1"
           usesh: true
           prepare: |
-            pkg install -y php84 php84-simplexml python311 unzip ca_root_nss
+            pkg install -y php84 php84-simplexml php84-filter python311 unzip ca_root_nss
           run: |
             set -eu
             uname -a
