@@ -20,7 +20,7 @@ jobs:
           release: "15.1"
           usesh: true
           prepare: |
-            pkg install -y php84 python311 unzip ca_root_nss
+            pkg install -y php84 php84-simplexml php84-filter python311 unzip ca_root_nss
           run: |
             set -eu
             uname -a
@@ -31,6 +31,13 @@ jobs:
             python3.11 tests/static_compat_test.py
             python3.11 tests/behavioral_stop_test.py
             python3.11 tests/behavioral_actions_test.py
+            python3.11 tests/behavioral_config_test.py
+            python3.11 tests/behavioral_candidate_test.py
+            python3.11 tests/behavioral_validate_api_test.py
+            python3.11 tests/behavioral_process_identity_test.py
+            python3.11 tests/behavioral_boot_log_test.py
+            python3.11 tests/upgrade_publication_test.py
+            php -l plugin/etc/inc/plugins.inc.d/xray.inc
             python3.11 tests/behavioral_lock_test.py
             python3.11 tests/behavioral_socks_test.py
             # Read-only kernel TUN capability probe; do not destroy devices

@@ -40,7 +40,11 @@ class InstanceController extends ApiMutableModelControllerBase
 
     public function getItemAction($uuid = null)
     {
-        return $this->getBase('instance', 'instance', $uuid);
+        $response = $this->getBase('instance', 'instance', $uuid);
+        // Dialog metadata: only an existing, saved object can be validated.
+        $response['instance_uuid'] = isset($response['instance']) && is_string($uuid)
+            && preg_match('/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iD', $uuid) ? $uuid : '';
+        return $response;
     }
 
     public function addItemAction()
