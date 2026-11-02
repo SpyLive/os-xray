@@ -41,7 +41,9 @@ function xray_apply_action($action,$uuid) {
     hook_source = hook_source.replace('/usr/local/bin/php', shlex.quote(shutil.which('php')))
     hook_source = hook_source.replace('/usr/local/opnsense/scripts/Xray/xray-service-control.php', shlex.quote(str(controller)))
     # configctl is an external OS boundary; reload-only must not write Boot log.
-    hook_source = hook_source.replace('/usr/local/sbin/configctl', '/bin/true')
+    true_executable = shutil.which('true')
+    assert true_executable is not None, 'true executable not found in PATH'
+    hook_source = hook_source.replace('/usr/local/sbin/configctl', shlex.quote(true_executable))
     hook = d/'hook.sh'; hook.write_text(hook_source)
     log.write_text('obsolete boot record\n')
     for fail in [False, True, False]:
